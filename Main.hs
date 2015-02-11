@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -10,9 +11,11 @@
 module Main where
 
 import           Control.Applicative
+import           Control.Arrow ((&&&))
 import           Control.Exception (bracket)
-import           Control.Lens (from, view, strict)
+import           Control.Lens (from, view, strict, use, lazy, _2)
 import           Control.Lens.Operators
+import           Control.Lens.TH
 import           Control.Monad.Reader
 import           Control.Monad.State
 import           Data.Acid
@@ -20,17 +23,21 @@ import           Data.Acid.Advanced (update', query')
 import           Data.Acid.Local (createCheckpointAndClose)
 import           Data.ByteString.Lens
 import           Data.Data (Data, Typeable)
+import           Data.Digest.Pure.SHA
 import           Data.Foldable
 import           Data.Functor ((<$>))
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe (fromMaybe, catMaybes, fromJust)
+import           Data.Maybe (fromMaybe, fromJust, isJust)
 import           Data.Proxy
 import           Data.SafeCopy
+import           Data.Sequence (Seq, (><))
+import qualified Data.Sequence as Seq
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as TIO
 import           Data.Text.Lazy.Lens
 import qualified Data.Text.Strict.Lens as LS
@@ -45,10 +52,7 @@ import           Text.Feed.Import
 import           Text.Feed.Query
 import           Text.Feed.Types (Feed, Item)
 
-hn = "https://news.ycombinator.com/rss"
-runningmusic = "http://www.reddit.com/r/runningmusic/.rss"
-
-feedsToFetch = [hn, runningmusic, "http://nullprogram.com/feed/"]
+type FeedStore = Map Text (Seq FeedItem)
 
 data FeedItem = FeedItem { _title :: Maybe Text
                          , _url :: Maybe Text
@@ -57,9 +61,53 @@ data FeedItem = FeedItem { _title :: Maybe Text
                          , _feedUrl :: Text
                          } deriving (Show, Eq, Ord, Data, Typeable)
 $(deriveSafeCopy 0 'base ''FeedItem)
+makeLenses ''FeedItem
 
-explode :: Feed -> [FeedItem]
-explode f = catMaybes $ map (convertFeedItem f) (getFeedItems f)
+hn = "https://news.ycombinator.com/rss"
+runningmusic = "http://www.reddit.com/r/runningmusic/.rss"
+nullprogram = "http://nullprogram.com/feed/"
+
+feedsToFetch = [hn, runningmusic, nullprogram]
+
+itemSHA :: FeedItem -> Digest SHA1State
+itemSHA = sha1 . maybe "" (view lazy . T.encodeUtf8) . view content
+
+buildStoreWithNew :: (Functor f, Foldable f) => Set String -> f FeedItem -> FeedStore
+buildStoreWithNew seen = Map.fromListWith (><)
+                       . map (_2 %~ Seq.filter (\item ->
+                               not $ Set.member (showDigest . itemSHA $ item) seen))
+                       . toList
+                       . fmap (view feedUrl &&& Seq.singleton)
+
+data RssDb = RssDb { _unreadFeeds :: FeedStore
+                   , _readFeeds :: FeedStore
+                   , _seenItems :: Set String
+                   } deriving (Data,Typeable)
+$(deriveSafeCopy 1 'base ''RssDb)
+makeLenses ''RssDb
+
+queryItems :: Query RssDb (FeedStore)
+queryItems = view unreadFeeds
+
+computeSHA :: Foldable f => f FeedItem -> Set String
+computeSHA = foldr' (Set.insert . showDigest . itemSHA) Set.empty
+
+updateFeeds :: Seq FeedItem -> Update RssDb ()
+updateFeeds feeds = do
+  seen <- use seenItems
+  unreadFeeds %= \uf -> Map.unionWith (><) uf (buildStoreWithNew seen feeds)
+  seenItems %= Set.union (computeSHA feeds)
+
+$(makeAcidic ''RssDb ['queryItems, 'updateFeeds])
+
+initialDb :: RssDb
+initialDb = RssDb Map.empty Map.empty Set.empty
+
+catMaybesSeq :: Seq (Maybe a) -> Seq a
+catMaybesSeq = fmap fromJust . Seq.filter isJust
+
+explode :: Feed -> Seq FeedItem
+explode f = catMaybesSeq $ fmap (convertFeedItem f) (Seq.fromList $ getFeedItems f)
 
 convertFeedItem :: Feed -> Item -> Maybe FeedItem
 convertFeedItem f i = FeedItem title url content feedTitle <$> feedUrl
@@ -69,26 +117,10 @@ convertFeedItem f i = FeedItem title url content feedTitle <$> feedUrl
         feedTitle = T.pack (getFeedTitle f)
         feedUrl = T.pack <$> (getFeedHome f)
 
-queryItems :: Query RssDb (FeedStore)
-queryItems = asks _dbFeeds
-
-fromFeeds :: (Functor f, Foldable f) => f FeedItem -> FeedStore
-fromFeeds = Map.fromListWith (Set.union) . toList . fmap (\f -> (_feedUrl f, Set.singleton f))
-
-updateFeeds :: [FeedItem] -> Update RssDb ()
-updateFeeds feeds = do
-  current <- gets _dbFeeds
-  put . RssDb $ Map.unionWith Set.union current (fromFeeds feeds)
-
-type FeedStore = Map Text (Set FeedItem)
-data RssDb = RssDb { _dbFeeds :: FeedStore } deriving (Data,Typeable)
-$(deriveSafeCopy 0 'base ''RssDb)
-$(makeAcidic ''RssDb ['queryItems, 'updateFeeds])
-
-initialDb = RssDb Map.empty
-
-fetchAll :: [String] -> IO [FeedItem]
-fetchAll urls = fmap (concatMap explode . catMaybes) $ traverse fetch urls
+fetchAll :: [String] -> IO (Seq FeedItem)
+fetchAll urls = foldM go Seq.empty urls
+  where go acc url = maybe acc (\feed -> acc >< (explode feed)) <$> fetch url
+--  fmap (\x -> catMaybesSeq x >>= explode) $ traverse fetch (Seq.fromList urls)
 
 fetch :: String -> IO (Maybe Feed)
 fetch url = parseFeedString
@@ -100,7 +132,7 @@ itemTitle item = maybe ("<no title given>") (view LS.packed) $ getItemTitle $ it
 
 addAll :: Foldable f => Widget (List FeedItem FormattedText) -> f FeedItem -> IO ()
 addAll list set = for_ set $ \x -> do
-  pt <- plainText (fromJust $ _title x <|> _url x <|> Just "<unknown>")
+  pt <- plainText (fromJust $ view title x <|> view url x <|> Just "<unknown>")
   addToList list x pt
 
 updateChannelFromAcid :: Widget (List Text FormattedText) -> AcidState RssDb -> IO ()
@@ -164,7 +196,7 @@ keyHandler :: Widget (List Text FormattedText)
            -> IO Bool
 keyHandler _ acid _ (KChar 'q') _= exitSuccess >> return True
 keyHandler w acid _ (KChar 'u') _= do
-  feeds <- fmap (concat . catMaybes) $ for feedsToFetch $ \f -> fmap explode <$> fetch f
+  feeds <- fetchAll feedsToFetch
   update' acid (UpdateFeeds feeds)
   updateChannelFromAcid w acid
   return True
@@ -175,4 +207,5 @@ viKeys = handler
         handler w (KChar 'k') _ = scrollUp w >> return True
         handler _ _ _ = return False
 
+main :: IO ()
 main = bracket (openLocalState initialDb) createCheckpointAndClose withAcid

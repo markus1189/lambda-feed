@@ -20,12 +20,14 @@ executable feeds-test
   ghc-options:         -threaded
   -- other-modules:
   -- other-extensions:
-  build-depends:       acid-state >= 0.12 && < 0.13
+  build-depends:       SHA >= 1.6 && < 1.7
+                     , acid-state >= 0.12 && < 0.13
                      , base >=4.8 && <4.9
                      , containers
                      , feed >= 0.3 && < 0.4
                      , lens >= 4.7 && < 4.8
                      , mtl
+                     , bytestring
                      , safecopy >= 0.8 && < 0.9
                      , tables >= 0.4 && < 0.5
                      , text
