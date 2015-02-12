@@ -120,7 +120,6 @@ convertFeedItem f i = FeedItem title url content feedTitle <$> feedUrl
 fetchAll :: [String] -> IO (Seq FeedItem)
 fetchAll urls = foldM go Seq.empty urls
   where go acc url = maybe acc (\feed -> acc >< (explode feed)) <$> fetch url
---  fmap (\x -> catMaybesSeq x >>= explode) $ traverse fetch (Seq.fromList urls)
 
 fetch :: String -> IO (Maybe Feed)
 fetch url = parseFeedString
@@ -139,7 +138,6 @@ updateChannelFromAcid :: Widget (List Text FormattedText) -> AcidState RssDb -> 
 updateChannelFromAcid w acid = do
   items <- query' acid QueryItems
   clearList w
---  addAll w (Set.unions $ toList items)
   for_ (Map.keys items) $ \i -> plainText i >>= addToList w i
 
 updateItemsFromAcid :: Text -> Widget (List FeedItem FormattedText) -> AcidState RssDb -> IO ()
@@ -156,7 +154,7 @@ withAcid acid = do
   channelUI <- centered channelList
 
   fgChannel <- newFocusGroup
-  fgChannel `onKeyPressed` (keyHandler channelList acid)
+  fgChannel `onKeyPressed` (channelKeyHandler channelList acid)
   addToFocusGroup fgChannel channelList
 
   itemList <- (newList 1) :: IO (Widget (List FeedItem FormattedText))
@@ -164,7 +162,7 @@ withAcid acid = do
   itemUI <- centered itemList
 
   fgItems <- newFocusGroup
-  fgItems `onKeyPressed` (keyHandler channelList acid)
+  fgItems `onKeyPressed` (channelKeyHandler channelList acid)
   addToFocusGroup fgItems itemList
 
   c <- newCollection
@@ -188,19 +186,19 @@ withAcid acid = do
   runUi c defaultContext
   exitSuccess
 
-keyHandler :: Widget (List Text FormattedText)
-           -> AcidState RssDb
-           -> a
-           -> Key
-           -> b
-           -> IO Bool
-keyHandler _ acid _ (KChar 'q') _= exitSuccess >> return True
-keyHandler w acid _ (KChar 'u') _= do
+channelKeyHandler :: Widget (List Text FormattedText)
+                  -> AcidState RssDb
+                  -> a
+                  -> Key
+                  -> b
+                  -> IO Bool
+channelKeyHandler _ acid _ (KChar 'q') _= exitSuccess >> return True
+channelKeyHandler w acid _ (KChar 'u') _= do
   feeds <- fetchAll feedsToFetch
   update' acid (UpdateFeeds feeds)
   updateChannelFromAcid w acid
   return True
-keyHandler _ _ _ _ _= return False
+channelKeyHandler _ _ _ _ _= return False
 
 viKeys = handler
   where handler w (KChar 'j') _ = scrollDown w >> return True
