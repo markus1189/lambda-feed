@@ -1,3 +1,4 @@
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE DeriveDataTypeable #-}
@@ -85,13 +86,17 @@ feedsToFetch = [hn
                ,"http://lifehacker.com/index.xml"
                ]
 
-itemSHA :: FeedItem -> Digest SHA1State
-itemSHA = sha1 . maybe "" (view lazy . T.encodeUtf8) . view content
+itemSHA :: FeedItem -> Maybe (Digest SHA1State)
+itemSHA i = sha1 . view lazy . T.encodeUtf8 <$> (maybeItemContent <> maybeChannelTitle)
+  where maybeItemContent = view content i
+        maybeChannelTitle = view (feedChannel . channelUrl) i
 
 buildStoreWithNew :: (Functor f, Foldable f) => Set String -> f FeedItem -> Map Channel (Seq FeedItem)
 buildStoreWithNew seen = Map.fromListWith (><)
                        . map (_2 %~ Seq.filter (\item ->
-                               not $ Set.member (showDigest . itemSHA $ item) seen))
+                           case showDigest <$> (itemSHA item) of
+                             Nothing -> False
+                             Just hash -> not (Set.member hash seen)))
                        . toList
                        . fmap (view feedChannel &&& Seq.singleton)
 
@@ -105,8 +110,10 @@ makeLenses ''RssDb
 queryItems :: Query RssDb (Map Channel (Seq FeedItem))
 queryItems = view unreadFeeds
 
-computeSHA :: Foldable f => f FeedItem -> Set String
-computeSHA = foldr' (Set.insert . showDigest . itemSHA) Set.empty
+computeSHAs :: Foldable f => f FeedItem -> Set String
+computeSHAs = foldl' go Set.empty
+  where go acc (itemSHA -> Just hash) = Set.insert (showDigest hash) acc
+        go acc (itemSHA -> Nothing) = acc
 
 markItemAsRead :: FeedItem -> Update RssDb ()
 markItemAsRead i = do
@@ -117,7 +124,7 @@ updateFeeds :: Seq FeedItem -> Update RssDb ()
 updateFeeds feeds = do
   seen <- use seenItems
   unreadFeeds %= \uf -> Map.unionWith (><) uf (buildStoreWithNew seen feeds)
-  seenItems %= Set.union (computeSHA feeds)
+  seenItems %= Set.union (computeSHAs feeds)
 
 $(makeAcidic ''RssDb ['queryItems, 'updateFeeds])
 
