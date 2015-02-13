@@ -11,15 +11,17 @@ cabal-version:       >=1.10
 
 executable feeds-test
   main-is:             Main.hs
-  ghc-options:         -threaded
+  ghc-options:         -threaded -Wwarn -Wall
   build-depends:       SHA >= 1.6 && < 1.7
                      , acid-state >= 0.12 && < 0.13
                      , base >=4.8 && <4.9
+                     , formatting >= 6.2 && < 6.3
                      , bytestring
                      , containers
                      , feed >= 0.3 && < 0.4
                      , lens >= 4.7 && < 4.8
                      , mtl
+                     , process >= 1.2 && < 1.3
                      , safecopy >= 0.8 && < 0.9
                      , tables >= 0.4 && < 0.5
                      , text
