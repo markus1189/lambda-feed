@@ -12,8 +12,9 @@ module Main where
 
 import           Control.Applicative
 import           Control.Arrow ((&&&))
-import           Control.Exception (bracket)
-import           Control.Lens (from, view, strict, use, lazy, _2)
+import           Control.Concurrent (forkIO)
+import           Control.Exception (bracket, evaluate)
+import           Control.Lens (from, view, strict, use, lazy, _2, non)
 import           Control.Lens.Operators
 import           Control.Lens.TH
 import           Control.Monad.Reader
@@ -39,18 +40,19 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as TIO
-import           Data.Text.Lazy.Lens
+import           Data.Text.Lazy.Lens hiding (text)
 import qualified Data.Text.Strict.Lens as LS
 import           Data.Traversable
-import           Graphics.Vty hiding ((<|>), update)
-import           Graphics.Vty.Widgets.All
+import           Graphics.Vty hiding ((<|>), update, text)
+import           Graphics.Vty.Widgets.All hiding (wrap)
 import qualified Network.Wreq as Wreq
 import           Network.Wreq hiding (Proxy, get, put)
 import           System.Exit (exitSuccess)
 import qualified System.IO.UTF8 as U
+import qualified Text.Atom.Feed as Atom
 import           Text.Feed.Import
 import           Text.Feed.Query
-import           Text.Feed.Types (Feed, Item)
+import           Text.Feed.Types
 
 type FeedStore = Map Text (Seq FeedItem)
 
@@ -67,7 +69,11 @@ hn = "https://news.ycombinator.com/rss"
 runningmusic = "http://www.reddit.com/r/runningmusic/.rss"
 nullprogram = "http://nullprogram.com/feed/"
 
-feedsToFetch = [hn, runningmusic, nullprogram]
+feedsToFetch = [hn
+               ,runningmusic
+               ,nullprogram
+               ,"http://lifehacker.com/index.xml"
+               ]
 
 itemSHA :: FeedItem -> Digest SHA1State
 itemSHA = sha1 . maybe "" (view lazy . T.encodeUtf8) . view content
@@ -113,7 +119,7 @@ convertFeedItem :: Feed -> Item -> Maybe FeedItem
 convertFeedItem f i = FeedItem title url content feedTitle <$> feedUrl
   where title = T.pack <$> (getItemTitle i)
         url = T.pack <$> getItemLink i
-        content = T.pack <$> getItemDescription i
+        content = getFeedContent i
         feedTitle = T.pack (getFeedTitle f)
         feedUrl = T.pack <$> (getFeedHome f)
 
@@ -146,33 +152,61 @@ updateItemsFromAcid k w acid = do
   clearList w
   addAll w (items Map.! k)
 
+wrap :: (Show a, Show b, Show c)
+     => Widget a
+     -> Widget b
+     -> Widget c
+     -> IO (Widget _)
+wrap header footer widget = (pure header <++> hFill ' ' 1)
+                       <--> centered widget
+                       <--> (pure footer <++> hFill ' ' 1)
+
+newList' :: Show b => Int -> IO (Widget (List a b))
+newList' i = do l <- newList i
+                setSelectedFocusedAttr l (Just $ (rgbColor 0 0 0) `on` (rgbColor 215 135 0))
+                return l
+
 withAcid :: AcidState RssDb -> IO ()
 withAcid acid = do
-  channelList <- (newList 1) :: IO (Widget (List Text FormattedText))
+  header <- plainText "LambaFeed"
+  setNormalAttribute header $ Attr KeepCurrent KeepCurrent (SetTo black)
+  footer <- plainText "..."
+  setNormalAttribute footer $ Attr KeepCurrent KeepCurrent (SetTo black)
+  channelList <- (newList' 1) :: IO (Widget (List Text FormattedText))
   channelList `onKeyPressed` viKeys
   updateChannelFromAcid channelList acid
-  channelUI <- centered channelList
+  channelUI <- wrap header footer channelList
 
   fgChannel <- newFocusGroup
-  fgChannel `onKeyPressed` (channelKeyHandler channelList acid)
+  fgChannel `onKeyPressed` (channelKeyHandler channelList footer acid)
   addToFocusGroup fgChannel channelList
 
-  itemList <- (newList 1) :: IO (Widget (List FeedItem FormattedText))
+  itemList <- (newList' 1) :: IO (Widget (List FeedItem FormattedText))
   itemList `onKeyPressed` viKeys
-  itemUI <- centered itemList
+  itemUI <- wrap header footer itemList
 
   fgItems <- newFocusGroup
-  fgItems `onKeyPressed` (channelKeyHandler channelList acid)
+  fgItems `onKeyPressed` (channelKeyHandler channelList footer acid)
   addToFocusGroup fgItems itemList
+
+  contentWidget <- plainText ""
+  contentUI <- wrap header footer contentWidget
+  fgContent <- newFocusGroup
+  addToFocusGroup fgContent contentWidget
 
   c <- newCollection
   channelView <- addToCollection c channelUI fgChannel
   itemView <- addToCollection c itemUI fgItems
+  contentView <- addToCollection c contentUI fgContent
 
   channelList `onItemActivated` \(ActivateItemEvent _ item _) -> do
     clearList itemList
     updateItemsFromAcid item itemList acid
     itemView
+
+  itemList `onItemActivated` \(ActivateItemEvent _ entry _) -> do
+    setText contentWidget (renderHTML . view (content . non "<no content found or invalid>") $ entry)
+    contentView
 
   fgItems `onKeyPressed` \_ k _ -> case k of
     (KChar 's') -> channelView >> return True
@@ -183,22 +217,30 @@ withAcid acid = do
     (KChar 's') -> itemView >> return True
     _ -> return False
 
+  fgContent `onKeyPressed` \_ k _ -> case k of
+    (KChar 'q') -> itemView >> return True
+    _ -> return False
+
   runUi c defaultContext
   exitSuccess
 
 channelKeyHandler :: Widget (List Text FormattedText)
+                  -> Widget FormattedText
                   -> AcidState RssDb
                   -> a
                   -> Key
                   -> b
                   -> IO Bool
-channelKeyHandler _ acid _ (KChar 'q') _= exitSuccess >> return True
-channelKeyHandler w acid _ (KChar 'u') _= do
-  feeds <- fetchAll feedsToFetch
-  update' acid (UpdateFeeds feeds)
-  updateChannelFromAcid w acid
+channelKeyHandler _ footer acid _ (KChar 'q') _= exitSuccess >> return True
+channelKeyHandler w footer acid _ (KChar 'u') _= do
+  setText footer "Updating..."
+  forkIO $ do
+    feeds <- fetchAll feedsToFetch
+    update' acid (UpdateFeeds feeds)
+    updateChannelFromAcid w acid
+    schedule $ setText footer "Done."
   return True
-channelKeyHandler _ _ _ _ _= return False
+channelKeyHandler _ _ _ _ _ _= return False
 
 viKeys = handler
   where handler w (KChar 'j') _ = scrollDown w >> return True
@@ -207,3 +249,10 @@ viKeys = handler
 
 main :: IO ()
 main = bracket (openLocalState initialDb) createCheckpointAndClose withAcid
+
+getFeedContent :: Item -> Maybe Text
+getFeedContent (AtomItem i) = case Atom.entryContent i of
+  Just (Atom.HTMLContent c) -> Just (T.pack c)
+  _ -> Nothing
+getFeedContent i@(RSSItem _) = T.pack <$> getItemDescription i
+getFeedContent _ = Nothing

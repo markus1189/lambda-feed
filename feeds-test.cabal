@@ -3,31 +3,23 @@
 
 name:                feeds-test
 version:             0.1.0.0
--- synopsis:
--- description:
--- license:
 license-file:        LICENSE
 author:              Markus Hauck
 maintainer:          markus1189@gmail.com
--- copyright:
--- category:
 build-type:          Simple
--- extra-source-files:
 cabal-version:       >=1.10
 
 executable feeds-test
   main-is:             Main.hs
   ghc-options:         -threaded
-  -- other-modules:
-  -- other-extensions:
   build-depends:       SHA >= 1.6 && < 1.7
                      , acid-state >= 0.12 && < 0.13
                      , base >=4.8 && <4.9
+                     , bytestring
                      , containers
                      , feed >= 0.3 && < 0.4
                      , lens >= 4.7 && < 4.8
                      , mtl
-                     , bytestring
                      , safecopy >= 0.8 && < 0.9
                      , tables >= 0.4 && < 0.5
                      , text
@@ -35,5 +27,4 @@ executable feeds-test
                      , vty >= 5.2 && < 5.3
                      , vty-ui >= 1.8 && < 1.9
                      , wreq >= 0.3 && < 0.4
-  -- hs-source-dirs:
   default-language:    Haskell2010
