@@ -14,8 +14,7 @@ module Main where
 import           Control.Applicative
 import           Control.Arrow ((&&&))
 import           Control.Concurrent (forkIO)
-import           Control.Exception (bracket)
-import           Control.Exception.Lens (trying_, _IOException)
+import           Control.Exception (bracket, SomeException, try)
 import           Control.Lens (from, view, use, lazy, _2, non, at, ix)
 import           Control.Lens.Operators
 import           Control.Lens.TH
@@ -44,7 +43,7 @@ import           Formatting (sformat, left, (%), stext)
 import           Graphics.Vty hiding ((<|>), update, text)
 import           Graphics.Vty.Widgets.All hiding (wrap)
 import qualified Network.Wreq as Wreq
-import           Network.Wreq hiding (Proxy, get, put)
+import           Network.Wreq hiding (Proxy, get, put, header)
 import           System.Exit (exitSuccess)
 import           System.Process (readProcess)
 import qualified Text.Atom.Feed as Atom
@@ -62,9 +61,9 @@ describeChannel :: Channel -> Text
 describeChannel (Channel title Nothing) = title
 describeChannel (Channel title (Just url)) = url <> ":  " <> title
 
-data FeedItem = FeedItem { _title :: Maybe Text
-                         , _url :: Maybe Text
-                         , _content :: Maybe Text
+data FeedItem = FeedItem { _feedTitle :: Maybe Text
+                         , _feedUrl :: Maybe Text
+                         , _feedContent :: Maybe Text
                          , _feedChannel :: Channel
                          } deriving (Show, Eq, Ord, Data, Typeable)
 $(deriveSafeCopy 0 'base ''FeedItem)
@@ -88,7 +87,7 @@ feedsToFetch = [hn
 
 itemSHA :: FeedItem -> Maybe (Digest SHA1State)
 itemSHA i = sha1 . view lazy . T.encodeUtf8 <$> (maybeItemContent <> maybeChannelTitle)
-  where maybeItemContent = view content i
+  where maybeItemContent = view feedContent i
         maybeChannelTitle = view (feedChannel . channelUrl) i
 
 buildStoreWithNew :: (Functor f, Foldable f) => Set String -> f FeedItem -> Map Channel (Seq FeedItem)
@@ -113,7 +112,7 @@ queryItems = view unreadFeeds
 computeSHAs :: Foldable f => f FeedItem -> Set String
 computeSHAs = foldl' go Set.empty
   where go acc (itemSHA -> Just hash) = Set.insert (showDigest hash) acc
-        go acc (itemSHA -> Nothing) = acc
+        go acc _ = acc
 
 markItemAsRead :: FeedItem -> Update RssDb ()
 markItemAsRead i = do
@@ -138,33 +137,32 @@ explode :: Feed -> Seq FeedItem
 explode f = fmap (convertFeedItem f) (Seq.fromList $ getFeedItems f)
 
 convertFeedItem :: Feed -> Item -> FeedItem
-convertFeedItem f i = FeedItem title url content feedChannel
+convertFeedItem f i = FeedItem title url content chan
   where title = T.pack <$> (getItemTitle i)
         url = T.pack <$> getItemLink i
         content = getFeedContent i
-        feedTitle = T.pack (getFeedTitle f)
-        feedChannel = Channel (T.pack (getFeedTitle f)) (T.pack <$> (getFeedHome f))
+        chan = Channel (T.pack (getFeedTitle f)) (T.pack <$> (getFeedHome f))
 
 fetchAll :: [String] -> IO (Seq FeedItem)
 fetchAll urls = foldM go Seq.empty urls
   where go acc url = maybe acc (\feed -> acc >< (explode feed)) <$> fetch url
 
-tryIO' :: IO a -> IO (Maybe a)
-tryIO' = trying_ _IOException
+try' :: IO a -> IO (Either SomeException a)
+try' = try
 
 fetch :: String -> IO (Maybe Feed)
 fetch url = do
-  maybeFeed <- tryIO' (Wreq.get url)
-  case maybeFeed of
-    Nothing -> return Nothing
-    Just feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
+  feedOrErr <- try' (Wreq.get url)
+  case feedOrErr of
+    Left _ -> return Nothing
+    Right feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
 
 itemTitle :: Item -> Text
 itemTitle item = maybe ("<no title given>") (view LS.packed) $ getItemTitle $ item
 
 addAll :: Foldable f => Widget (List FeedItem FormattedText) -> f FeedItem -> IO ()
 addAll list set = for_ set $ \x -> do
-  pt <- plainText (fromJust $ view title x <|> view url x <|> Just "<unknown>")
+  pt <- plainText (fromJust $ view feedTitle x <|> view feedUrl x <|> Just "<unknown>")
   addToList list x pt
 
 updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState RssDb -> IO ()
@@ -202,8 +200,10 @@ pandocRender s = T.pack <$> (readProcess "/usr/bin/pandoc" ["-f", "html", "-t", 
 
 newList' :: Show b => Int -> IO (Widget (List a b))
 newList' i = do l <- newList i
-                setSelectedFocusedAttr l (Just $ (rgbColor 0 0 0) `on` (rgbColor 215 135 0))
+                setSelectedFocusedAttr l (Just $ black' `on` orange)
                 return l
+  where black' = rgbColor (0 :: Int) 0 0
+        orange = rgbColor 215 135 (0 :: Int)
 
 withAcid :: AcidState RssDb -> IO ()
 withAcid acid = do
@@ -216,7 +216,7 @@ withAcid acid = do
 
   fgChannel <- newFocusGroup
   fgChannel `onKeyPressed` (channelKeyHandler channelList footer acid)
-  addToFocusGroup fgChannel channelList
+  void $ addToFocusGroup fgChannel channelList
 
   itemList <- (newList' 1)
   itemList `onKeyPressed` viKeys
@@ -224,13 +224,13 @@ withAcid acid = do
 
   fgItems <- newFocusGroup
   fgItems `onKeyPressed` (channelKeyHandler channelList footer acid)
-  addToFocusGroup fgItems itemList
+  void $ addToFocusGroup fgItems itemList
 
   contentWidget <- plainText ""
   contentWidget' <- pure contentWidget <--> vFill ' '
   contentUI <- wrap header footer contentWidget'
   fgContent <- newFocusGroup
-  addToFocusGroup fgContent contentWidget
+  void $ addToFocusGroup fgContent contentWidget
 
   c <- newCollection
   channelView <- addToCollection c channelUI fgChannel
@@ -243,7 +243,7 @@ withAcid acid = do
     itemView
 
   itemList `onItemActivated` \(ActivateItemEvent _ entry _) -> do
-    rendered <- pandocRender (view (content . non "<no content found or invalid>") $ entry)
+    rendered <- pandocRender (view (feedContent . non "<no content found or invalid>") $ entry)
     setText contentWidget rendered
     contentView
 
@@ -273,7 +273,7 @@ channelKeyHandler :: Widget (List Channel FormattedText)
 channelKeyHandler _ _ _ _ (KChar 'q') _= exitSuccess >> return True
 channelKeyHandler w footer acid _ (KChar 'u') _= do
   setText footer "Updating..."
-  forkIO $ do
+  void . forkIO $ do
     feeds <- fetchAll feedsToFetch
     update' acid (UpdateFeeds feeds)
     updateChannelFromAcid w acid
@@ -281,6 +281,7 @@ channelKeyHandler w footer acid _ (KChar 'u') _= do
   return True
 channelKeyHandler _ _ _ _ _ _= return False
 
+viKeys :: Widget (List a b) -> Key -> t -> IO Bool
 viKeys = handler
   where handler w (KChar 'j') _ = scrollDown w >> return True
         handler w (KChar 'k') _ = scrollUp w >> return True
