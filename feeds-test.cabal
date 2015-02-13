@@ -12,6 +12,7 @@ cabal-version:       >=1.10
 executable feeds-test
   main-is:             Main.hs
   ghc-options:         -threaded -Wwarn -Wall
+  hs-source-dirs:      src
   build-depends:       SHA >= 1.6 && < 1.7
                      , acid-state >= 0.12 && < 0.13
                      , base >=4.8 && <4.9
