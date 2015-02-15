@@ -30,7 +30,8 @@ import           Data.Text.Lazy.Lens (utf8, packed)
 import           Data.Text.Lens (_Text)
 import           Data.Time (formatTime, defaultTimeLocale, rfc822DateFormat)
 import           Data.Time (getCurrentTime, UTCTime)
-import           Formatting (sformat, left, (%), stext)
+import           Formatting (sformat, left, (%), (%.), stext, int)
+import           Formatting.Time (monthNameShort, dayOfMonth)
 import           Graphics.Vty hiding ((<|>), update, text)
 import           Graphics.Vty.Widgets.All hiding (wrap)
 import qualified Network.Wreq as Wreq
@@ -92,9 +93,18 @@ fetch url = do
     Right feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
 
 addAll :: Foldable f => Widget (List FeedItem FormattedText) -> f FeedItem -> IO ()
-addAll list set = for_ set $ \x -> do
-  pt <- plainText (fromJust $ view itemTitle x <|> view itemUrl x <|> Just "<unknown>")
-  addToList list x pt
+addAll list set = for_ (zip [(1::Int)..] (toList set)) $ \(i,item) -> do
+  let description = fromJust (view itemTitle item <|> view itemUrl item <|> Just "<unknown>")
+      pdate = view itemPubDate item
+      fmt = (left 4 ' ' %. int)
+          % "  "
+          % monthNameShort
+          % " "
+          % dayOfMonth
+          % "   "
+          % stext
+  label <- plainText $ sformat fmt i pdate pdate description
+  addToList list item label
 
 updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState Database -> IO ()
 updateChannelFromAcid w acid = do
@@ -169,7 +179,7 @@ myHeaderHighlight = defAttr `withForeColor` orange `withStyle` bold
 
 withAcid :: AcidState Database -> IO ()
 withAcid acid = do
-  header <- plainText "LambaFeed"
+  header <- plainText "λ Feed"
   footer <- plainText ""
   channelList <- (newList' 1)
   channelList `onKeyPressed` viKeys
