@@ -15,6 +15,13 @@ module LambdaFeed.Types (Channel(Channel)
                         ,itemChannel
                         ,itemPubDate
 
+                        ,RenderedItem(RenderedItem)
+                        ,renderedFeed
+                        ,renderedItemTitle
+                        ,renderedLink
+                        ,renderedPubDate
+                        ,renderedContent
+
                         ,Database(Database)
                         ,readFeeds
                         ,unreadFeeds
@@ -65,6 +72,14 @@ data FeedItem = FeedItem { _itemTitle :: Maybe Text
                          } deriving (Show, Eq, Ord, Data, Typeable)
 $(deriveSafeCopy 0 'base ''FeedItem)
 makeLenses ''FeedItem
+
+data RenderedItem = RenderedItem { _renderedFeed :: Text
+                                 , _renderedItemTitle :: Text
+                                 , _renderedLink :: Text
+                                 , _renderedPubDate :: Text
+                                 , _renderedContent :: Text
+                                 } deriving (Eq,Show)
+makeLenses ''RenderedItem
 
 data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
                    , _readFeeds :: Map Channel (Seq FeedItem)

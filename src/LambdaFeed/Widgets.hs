@@ -18,9 +18,10 @@ newArticleWidget = do
     _ -> return False
   return lst
 
-setArticle :: Widget (List Text FormattedText) -> Text -> IO ()
-setArticle w article = do
+setArticle :: Widget (List Text FormattedText) -> [(Text,Attr)] -> IO ()
+setArticle w contents = do
   clearList w
-  for_ (T.lines article)  $ \line -> do
-    lineW <- plainText line
-    addToList w line lineW
+  for_ contents $ \(content,attr) -> do
+    for_ (T.lines content)  $ \line -> do
+      lineW <- plainTextWithAttrs [(line,attr)]
+      addToList w line lineW

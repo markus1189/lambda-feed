@@ -1,20 +1,19 @@
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 module Main where
 
 import           Control.Applicative
 import           Control.Concurrent (forkIO)
 import           Control.Exception (bracket, SomeException, try)
-import           Control.Lens (from, view, non)
+import           Control.Lens (from, view, non, (%~), (&), to)
 import           Control.Monad.Reader
 import           Data.Acid
 import           Data.Acid.Advanced (update', query')
@@ -22,11 +21,14 @@ import           Data.Acid.Local (createCheckpointAndClose)
 import           Data.Foldable
 import qualified Data.Map as Map
 import           Data.Maybe (fromJust, isJust)
+import           Data.Monoid ((<>))
 import           Data.Sequence (Seq, (><))
 import qualified Data.Sequence as Seq
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           Data.Text.Lazy.Lens hiding (text)
+import           Data.Text.Lazy.Lens (utf8, packed)
+import           Data.Text.Lens (_Text)
+import           Data.Time (formatTime, defaultTimeLocale, rfc822DateFormat)
 import           Data.Time (getCurrentTime, UTCTime)
 import           Formatting (sformat, left, (%), stext)
 import           Graphics.Vty hiding ((<|>), update, text)
@@ -34,6 +36,7 @@ import           Graphics.Vty.Widgets.All hiding (wrap)
 import qualified Network.Wreq as Wreq
 import           Network.Wreq hiding (Proxy, get, put, header)
 import           System.Exit (exitSuccess)
+import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process (readProcess)
 import qualified Text.Atom.Feed as Atom
 import           Text.Feed.Import
@@ -123,15 +126,46 @@ wrap header footer widget = do
   setNormalAttribute footer' $ Attr KeepCurrent KeepCurrent (SetTo black)
   pure header' <--> pure widget <--> pure footer'
 
-pandocRender :: Text -> IO Text
-pandocRender s = T.pack <$> (readProcess "/usr/bin/pandoc" ["-f", "html", "-t", "markdown", "--reference-links"] . T.unpack $ s)
+renderItem :: FeedItem -> RenderedItem
+renderItem i = RenderedItem feedTitle' itemTitle' itemLink' pubDate' pandocResult
+  where pandocRender = unsafePerformIO . readProcess "/usr/bin/pandoc" ["-f"
+                                                                       ,"html"
+                                                                       ,"-t"
+                                                                       ,"markdown"
+                                                                       ,"--reference-links"
+                                                                       ]
+        content = view (itemContent . non "Cannot render content.") i
+        pandocResult = content & _Text %~ pandocRender
+        feedTitle' = view (itemChannel . to describeChannel) $ i
+        itemTitle' = view (itemTitle . non "<No title>") i
+        itemLink' = view (itemUrl . non "<No link>") i
+        pubDate' = formatPubDate . view itemPubDate $ i
+        formatPubDate :: UTCTime -> Text
+        formatPubDate = T.pack . formatTime defaultTimeLocale rfc822DateFormat
+
+display :: RenderedItem -> [(Text,Attr)]
+display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
+            ,("Title: " <> view renderedItemTitle r, myHeaderHighlight)
+            ,("Link: " <> view renderedLink r, myHeaderHighlight)
+            ,("Date: " <> view renderedPubDate r, myHeaderHighlight)
+            ,("\n", defAttr)
+            ,(view renderedContent r, defAttr)
+            ]
 
 newList' :: Show b => Int -> IO (Widget (List a b))
 newList' i = do l <- newList i
-                setSelectedFocusedAttr l (Just $ black' `on` orange)
+                setSelectedFocusedAttr l (Just myDefAttr)
                 return l
+
+myDefAttr :: Attr
+myDefAttr = black' `on` orange `withStyle` bold
   where black' = rgbColor (0 :: Int) 0 0
-        orange = rgbColor 215 135 (0 :: Int)
+
+orange :: Color
+orange = rgbColor 215 135 (0 :: Int)
+
+myHeaderHighlight :: Attr
+myHeaderHighlight = defAttr `withForeColor` orange `withStyle` bold
 
 withAcid :: AcidState Database -> IO ()
 withAcid acid = do
@@ -169,9 +203,8 @@ withAcid acid = do
     updateItemsFromAcid item itemList acid
     itemView
 
-  itemList `onItemActivated` \(ActivateItemEvent _ entry _) -> do
-    rendered <- pandocRender (view (itemContent . non "<no content found or invalid>") $ entry)
-    setArticle contentWidget rendered
+  itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
+    setArticle contentWidget (display (renderItem item))
     contentView
 
   fgItems `onKeyPressed` \_ k _ -> case k of
