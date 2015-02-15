@@ -40,6 +40,7 @@ import           Text.Feed.Import
 import           Text.Feed.Query
 import           Text.Feed.Types
 
+import LambdaFeed.Widgets
 import LambdaFeed.Types
 
 hn :: String
@@ -93,7 +94,7 @@ addAll list set = for_ set $ \x -> do
   pt <- plainText (fromJust $ view feedTitle x <|> view feedUrl x <|> Just "<unknown>")
   addToList list x pt
 
-updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState RssDb -> IO ()
+updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState Database -> IO ()
 updateChannelFromAcid w acid = do
   items <- query' acid QueryItems
   clearList w
@@ -104,7 +105,7 @@ updateChannelFromAcid w acid = do
 
 updateItemsFromAcid :: Channel
                     -> Widget (List FeedItem FormattedText)
-                    -> AcidState RssDb
+                    -> AcidState Database
                     -> IO ()
 updateItemsFromAcid k w acid = do
   items <- query' acid QueryItems
@@ -133,7 +134,7 @@ newList' i = do l <- newList i
   where black' = rgbColor (0 :: Int) 0 0
         orange = rgbColor 215 135 (0 :: Int)
 
-withAcid :: AcidState RssDb -> IO ()
+withAcid :: AcidState Database -> IO ()
 withAcid acid = do
   header <- plainText "LambaFeed"
   footer <- plainText ""
@@ -154,9 +155,8 @@ withAcid acid = do
   fgItems `onKeyPressed` (channelKeyHandler channelList footer acid)
   void $ addToFocusGroup fgItems itemList
 
-  contentWidget <- plainText ""
-  contentWidget' <- pure contentWidget <--> vFill ' '
-  contentUI <- wrap header footer contentWidget'
+  contentWidget <- newArticleWidget
+  contentUI <- wrap header footer contentWidget
   fgContent <- newFocusGroup
   void $ addToFocusGroup fgContent contentWidget
 
@@ -172,7 +172,7 @@ withAcid acid = do
 
   itemList `onItemActivated` \(ActivateItemEvent _ entry _) -> do
     rendered <- pandocRender (view (feedContent . non "<no content found or invalid>") $ entry)
-    setText contentWidget rendered
+    setArticle contentWidget rendered
     contentView
 
   fgItems `onKeyPressed` \_ k _ -> case k of
@@ -193,7 +193,7 @@ withAcid acid = do
 
 channelKeyHandler :: Widget (List Channel FormattedText)
                   -> Widget FormattedText
-                  -> AcidState RssDb
+                  -> AcidState Database
                   -> a
                   -> Key
                   -> b
@@ -215,6 +215,7 @@ viKeys = handler
         handler w (KChar 'k') _ = scrollUp w >> return True
         handler w (KChar 'g') _ = scrollToBeginning w >> return True
         handler w (KChar 'G') _ = scrollToEnd w >> return True
+        handler w (KChar ':') _ = setSelected w 5 >> return True
         handler _ _ _ = return False
 
 main :: IO ()
