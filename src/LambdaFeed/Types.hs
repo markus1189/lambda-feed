@@ -14,7 +14,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,feedContent
                         ,feedChannel
 
-                        ,RssDb(RssDb)
+                        ,Database(Database)
                         ,readFeeds
                         ,unreadFeeds
                         ,initialDb
@@ -62,22 +62,22 @@ data FeedItem = FeedItem { _feedTitle :: Maybe Text
 $(deriveSafeCopy 0 'base ''FeedItem)
 makeLenses ''FeedItem
 
-data RssDb = RssDb { _unreadFeeds :: Map Channel (Seq FeedItem)
+data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
                    , _readFeeds :: Map Channel (Seq FeedItem)
                    , _seenItems :: Set String
                    } deriving (Data,Typeable)
-$(deriveSafeCopy 1 'base ''RssDb)
-makeLenses ''RssDb
+$(deriveSafeCopy 1 'base ''Database)
+makeLenses ''Database
 
-queryItems :: Query RssDb (Map Channel (Seq FeedItem))
+queryItems :: Query Database (Map Channel (Seq FeedItem))
 queryItems = view unreadFeeds
 
-markItemAsRead :: FeedItem -> Update RssDb ()
+markItemAsRead :: FeedItem -> Update Database ()
 markItemAsRead i = do
   unreadFeeds %= (at (view feedChannel i) .~ Nothing)
   readFeeds %= (ix (view feedChannel i) %~ \is -> is Seq.>< (Seq.singleton i))
 
-updateFeeds :: Seq FeedItem -> Update RssDb ()
+updateFeeds :: Seq FeedItem -> Update Database ()
 updateFeeds feeds = do
   seen <- use seenItems
   unreadFeeds %= \uf -> Map.unionWith (><) uf (buildStoreWithNew seen feeds)
@@ -102,7 +102,7 @@ itemSHA i = sha1 . view lazy . T.encodeUtf8 <$> (maybeItemContent <> maybeChanne
   where maybeItemContent = view feedContent i
         maybeChannelTitle = view (feedChannel . channelUrl) i
 
-$(makeAcidic ''RssDb ['queryItems, 'updateFeeds])
+$(makeAcidic ''Database ['queryItems, 'updateFeeds])
 
-initialDb :: RssDb
-initialDb = RssDb Map.empty Map.empty Set.empty
+initialDb :: Database
+initialDb = Database Map.empty Map.empty Set.empty
