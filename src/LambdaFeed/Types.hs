@@ -9,10 +9,11 @@ module LambdaFeed.Types (Channel(Channel)
                         ,describeChannel
 
                         ,FeedItem(FeedItem)
-                        ,feedTitle
-                        ,feedUrl
-                        ,feedContent
-                        ,feedChannel
+                        ,itemTitle
+                        ,itemUrl
+                        ,itemContent
+                        ,itemChannel
+                        ,itemPubDate
 
                         ,Database(Database)
                         ,readFeeds
@@ -43,6 +44,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as T
+import           Data.Time
 
 data Channel = Channel { _channelTitle :: Text
                        , _channelUrl :: Maybe Text
@@ -54,10 +56,11 @@ describeChannel :: Channel -> Text
 describeChannel (Channel title Nothing) = title
 describeChannel (Channel title (Just url)) = url <> ":  " <> title
 
-data FeedItem = FeedItem { _feedTitle :: Maybe Text
-                         , _feedUrl :: Maybe Text
-                         , _feedContent :: Maybe Text
-                         , _feedChannel :: Channel
+data FeedItem = FeedItem { _itemTitle :: Maybe Text
+                         , _itemUrl :: Maybe Text
+                         , _itemContent :: Maybe Text
+                         , _itemPubDate :: UTCTime
+                         , _itemChannel :: Channel
                          } deriving (Show, Eq, Ord, Data, Typeable)
 $(deriveSafeCopy 0 'base ''FeedItem)
 makeLenses ''FeedItem
@@ -74,8 +77,8 @@ queryItems = view unreadFeeds
 
 markItemAsRead :: FeedItem -> Update Database ()
 markItemAsRead i = do
-  unreadFeeds %= (at (view feedChannel i) .~ Nothing)
-  readFeeds %= (ix (view feedChannel i) %~ \is -> is Seq.>< (Seq.singleton i))
+  unreadFeeds %= (at (view itemChannel i) .~ Nothing)
+  readFeeds %= (ix (view itemChannel i) %~ \is -> is Seq.>< (Seq.singleton i))
 
 updateFeeds :: Seq FeedItem -> Update Database ()
 updateFeeds feeds = do
@@ -90,7 +93,7 @@ buildStoreWithNew seen = Map.fromListWith (><)
                              Nothing -> False
                              Just hash -> not (Set.member hash seen)))
                        . toList
-                       . fmap (view feedChannel &&& Seq.singleton)
+                       . fmap (view itemChannel &&& Seq.singleton)
 
 computeSHAs :: Foldable f => f FeedItem -> Set String
 computeSHAs = foldl' go Set.empty
@@ -99,8 +102,8 @@ computeSHAs = foldl' go Set.empty
 
 itemSHA :: FeedItem -> Maybe (Digest SHA1State)
 itemSHA i = sha1 . view lazy . T.encodeUtf8 <$> (maybeItemContent <> maybeChannelTitle)
-  where maybeItemContent = view feedContent i
-        maybeChannelTitle = view (feedChannel . channelUrl) i
+  where maybeItemContent = view itemContent i
+        maybeChannelTitle = view (itemChannel . channelUrl) i
 
 $(makeAcidic ''Database ['queryItems, 'updateFeeds])
 

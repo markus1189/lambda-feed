@@ -27,7 +27,7 @@ import qualified Data.Sequence as Seq
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Text.Lazy.Lens hiding (text)
-import qualified Data.Text.Strict.Lens as LS
+import           Data.Time (getCurrentTime, UTCTime)
 import           Formatting (sformat, left, (%), stext)
 import           Graphics.Vty hiding ((<|>), update, text)
 import           Graphics.Vty.Widgets.All hiding (wrap)
@@ -40,8 +40,8 @@ import           Text.Feed.Import
 import           Text.Feed.Query
 import           Text.Feed.Types
 
-import LambdaFeed.Widgets
-import LambdaFeed.Types
+import           LambdaFeed.Widgets
+import           LambdaFeed.Types
 
 hn :: String
 hn = "https://news.ycombinator.com/rss"
@@ -57,24 +57,26 @@ feedsToFetch = [hn
                ,runningmusic
                ,nullprogram
                ,"http://lifehacker.com/index.xml"
+               ,"http://www.reddit.com/r/haskell/.rss"
                ]
 
 catMaybesSeq :: Seq (Maybe a) -> Seq a
 catMaybesSeq = fmap fromJust . Seq.filter isJust
 
-explode :: Feed -> Seq FeedItem
-explode f = fmap (convertFeedItem f) (Seq.fromList $ getFeedItems f)
+explode :: UTCTime -> Feed -> Seq FeedItem
+explode now f = fmap (convertFeedItem now f) (Seq.fromList $ getFeedItems f)
 
-convertFeedItem :: Feed -> Item -> FeedItem
-convertFeedItem f i = FeedItem title url content chan
+convertFeedItem :: UTCTime -> Feed -> Item -> FeedItem
+convertFeedItem now f i = FeedItem title url content pubDateOrNow chan
   where title = T.pack <$> (getItemTitle i)
         url = T.pack <$> getItemLink i
         content = getFeedContent i
         chan = Channel (T.pack (getFeedTitle f)) (T.pack <$> (getFeedHome f))
+        pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
 
 fetchAll :: [String] -> IO (Seq FeedItem)
-fetchAll urls = foldM go Seq.empty urls
-  where go acc url = maybe acc (\feed -> acc >< (explode feed)) <$> fetch url
+fetchAll urls = getCurrentTime >>= \t -> foldM (go t) Seq.empty urls
+  where go now acc url = maybe acc (\feed -> acc >< (explode now feed)) <$> fetch url
 
 try' :: IO a -> IO (Either SomeException a)
 try' = try
@@ -86,12 +88,9 @@ fetch url = do
     Left _ -> return Nothing
     Right feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
 
-itemTitle :: Item -> Text
-itemTitle item = maybe ("<no title given>") (view LS.packed) $ getItemTitle $ item
-
 addAll :: Foldable f => Widget (List FeedItem FormattedText) -> f FeedItem -> IO ()
 addAll list set = for_ set $ \x -> do
-  pt <- plainText (fromJust $ view feedTitle x <|> view feedUrl x <|> Just "<unknown>")
+  pt <- plainText (fromJust $ view itemTitle x <|> view itemUrl x <|> Just "<unknown>")
   addToList list x pt
 
 updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState Database -> IO ()
@@ -171,7 +170,7 @@ withAcid acid = do
     itemView
 
   itemList `onItemActivated` \(ActivateItemEvent _ entry _) -> do
-    rendered <- pandocRender (view (feedContent . non "<no content found or invalid>") $ entry)
+    rendered <- pandocRender (view (itemContent . non "<no content found or invalid>") $ entry)
     setArticle contentWidget rendered
     contentView
 
