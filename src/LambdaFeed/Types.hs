@@ -37,6 +37,7 @@ import           Data.Foldable
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Monoid ((<>))
+import           Data.Ord (comparing)
 import           Data.SafeCopy
 import           Data.Sequence (Seq, (><))
 import qualified Data.Sequence as Seq
@@ -88,7 +89,8 @@ updateFeeds feeds = do
 
 buildStoreWithNew :: (Functor f, Foldable f) => Set String -> f FeedItem -> Map Channel (Seq FeedItem)
 buildStoreWithNew seen = Map.fromListWith (><)
-                       . map (_2 %~ Seq.filter (\item ->
+                       . map (_2 %~ Seq.sortBy (comparing $ view itemPubDate)
+                              . Seq.filter (\item ->
                            case showDigest <$> (itemSHA item) of
                              Nothing -> False
                              Just hash -> not (Set.member hash seen)))
