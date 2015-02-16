@@ -109,11 +109,15 @@ addAll list set = for_ (zip [(1::Int)..] (toList set)) $ \(i,item) -> do
 
 updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState Database -> IO ()
 updateChannelFromAcid w acid = do
-  items <- query' acid QueryItems
+  (unreadItems,readItems) <- query' acid AllItems
   clearList w
-  for_ (Map.keys items) $ \chan -> do
-    let numItems = Seq.length $ items Map.! chan
-    lbl <- plainText $ sformat ("(" % left 4 ' ' % ") " % stext) numItems (describeChannel chan)
+  for_ (Map.keys unreadItems) $ \chan -> do
+    let numItemsUnread = maybe 0 Seq.length $ Map.lookup chan unreadItems
+        numItemsRead = maybe 0 Seq.length $ Map.lookup chan readItems
+        total = numItemsRead + numItemsUnread
+        fmtTotal = sformat ("(" % int % "/" % int % ")") numItemsUnread total
+    lbl <- plainText $ sformat ((left 11 ' ' %. stext) % " " % stext)
+                               fmtTotal (describeChannel chan)
     addToList w chan lbl
 
 updateItemsFromAcid :: Channel
@@ -121,7 +125,7 @@ updateItemsFromAcid :: Channel
                     -> AcidState Database
                     -> IO ()
 updateItemsFromAcid k w acid = do
-  items <- query' acid QueryItems
+  items <- query' acid UnreadItems
   clearList w
   addAll w (items Map.! k)
 

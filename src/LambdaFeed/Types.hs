@@ -30,7 +30,8 @@ module LambdaFeed.Types (Channel(Channel)
                         ,initialDb
                         ,markItemAsRead
 
-                        ,QueryItems(..)
+                        ,AllItems(..)
+                        ,UnreadItems(..)
                         ,UpdateFeeds(..)
                         ) where
 
@@ -86,14 +87,17 @@ data RenderedItem = RenderedItem { _renderedFeed :: Text
 makeLenses ''RenderedItem
 
 data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
-                   , _readFeeds :: Map Channel (Seq FeedItem)
-                   , _seenItems :: Set String
-                   } deriving (Data,Typeable)
+                         , _readFeeds :: Map Channel (Seq FeedItem)
+                         , _seenItems :: Set String
+                         } deriving (Data,Typeable)
 $(deriveSafeCopy 1 'base ''Database)
 makeLenses ''Database
 
-queryItems :: Query Database (Map Channel (Seq FeedItem))
-queryItems = view unreadFeeds
+unreadItems :: Query Database (Map Channel (Seq FeedItem))
+unreadItems = view unreadFeeds
+
+allItems :: Query Database (Map Channel (Seq FeedItem), Map Channel (Seq FeedItem))
+allItems = (,) <$> view unreadFeeds <*> view readFeeds
 
 markItemAsRead :: FeedItem -> Update Database ()
 markItemAsRead i = do
@@ -126,7 +130,7 @@ itemSHA i = sha1 . view lazy . T.encodeUtf8 <$> (maybeItemContent <> maybeChanne
   where maybeItemContent = view itemContent i
         maybeChannelTitle = view (itemChannel . channelUrl) i
 
-$(makeAcidic ''Database ['queryItems, 'updateFeeds])
+$(makeAcidic ''Database ['unreadItems, 'allItems, 'updateFeeds])
 
 initialDb :: Database
 initialDb = Database Map.empty Map.empty Set.empty
