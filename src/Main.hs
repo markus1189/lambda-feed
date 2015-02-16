@@ -71,9 +71,10 @@ explode :: UTCTime -> Feed -> Seq FeedItem
 explode now f = fmap (convertFeedItem now f) (Seq.fromList $ getFeedItems f)
 
 convertFeedItem :: UTCTime -> Feed -> Item -> FeedItem
-convertFeedItem now f i = FeedItem title url content pubDateOrNow chan
+convertFeedItem now f i = FeedItem title url curl content pubDateOrNow chan
   where title = T.pack <$> (getItemTitle i)
         url = T.pack <$> getItemLink i
+        curl = T.pack <$> getItemCommentLink i
         content = getFeedContent i
         chan = Channel (T.pack (getFeedTitle f)) (T.pack <$> (getFeedHome f))
         pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
@@ -137,7 +138,8 @@ wrap header footer widget = do
   pure header' <--> pure widget <--> pure footer'
 
 renderItem :: FeedItem -> RenderedItem
-renderItem i = RenderedItem feedTitle' itemTitle' itemLink' pubDate' pandocResult
+renderItem i =
+  RenderedItem feedTitle' itemTitle' itemLink' itemComments' pubDate' pandocResult
   where pandocRender = unsafePerformIO . readProcess "/usr/bin/pandoc" ["-f"
                                                                        ,"html"
                                                                        ,"-t"
@@ -149,6 +151,7 @@ renderItem i = RenderedItem feedTitle' itemTitle' itemLink' pubDate' pandocResul
         feedTitle' = view (itemChannel . to describeChannel) $ i
         itemTitle' = view (itemTitle . non "<No title>") i
         itemLink' = view (itemUrl . non "<No link>") i
+        itemComments' = view (itemCommentUrl . non "<No comments link>") i
         pubDate' = formatPubDate . view itemPubDate $ i
         formatPubDate :: UTCTime -> Text
         formatPubDate = T.pack . formatTime defaultTimeLocale rfc822DateFormat
@@ -156,7 +159,8 @@ renderItem i = RenderedItem feedTitle' itemTitle' itemLink' pubDate' pandocResul
 display :: RenderedItem -> [(Text,Attr)]
 display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
             ,("Title: " <> view renderedItemTitle r, myHeaderHighlight)
-            ,("Link: " <> view renderedLink r, myHeaderHighlight)
+            ,("Link: " <> view renderedUrl r, myHeaderHighlight)
+            ,("Comments: " <> view renderedCommentUrl r, myHeaderHighlight)
             ,("Date: " <> view renderedPubDate r, myHeaderHighlight)
             ,("\n", defAttr)
             ,(view renderedContent r, defAttr)

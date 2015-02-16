@@ -11,6 +11,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,FeedItem(FeedItem)
                         ,itemTitle
                         ,itemUrl
+                        ,itemCommentUrl
                         ,itemContent
                         ,itemChannel
                         ,itemPubDate
@@ -18,7 +19,8 @@ module LambdaFeed.Types (Channel(Channel)
                         ,RenderedItem(RenderedItem)
                         ,renderedFeed
                         ,renderedItemTitle
-                        ,renderedLink
+                        ,renderedUrl
+                        ,renderedCommentUrl
                         ,renderedPubDate
                         ,renderedContent
 
@@ -66,6 +68,7 @@ describeChannel (Channel title (Just url)) = url <> ":  " <> title
 
 data FeedItem = FeedItem { _itemTitle :: Maybe Text
                          , _itemUrl :: Maybe Text
+                         , _itemCommentUrl :: Maybe Text
                          , _itemContent :: Maybe Text
                          , _itemPubDate :: UTCTime
                          , _itemChannel :: Channel
@@ -75,7 +78,8 @@ makeLenses ''FeedItem
 
 data RenderedItem = RenderedItem { _renderedFeed :: Text
                                  , _renderedItemTitle :: Text
-                                 , _renderedLink :: Text
+                                 , _renderedUrl :: Text
+                                 , _renderedCommentUrl :: Text
                                  , _renderedPubDate :: Text
                                  , _renderedContent :: Text
                                  } deriving (Eq,Show)
