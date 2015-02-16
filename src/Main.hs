@@ -166,24 +166,28 @@ display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
             ,("Link: " <> view renderedUrl r, myHeaderHighlight)
             ,("Comments: " <> view renderedCommentUrl r, myHeaderHighlight)
             ,("Date: " <> view renderedPubDate r, myHeaderHighlight)
-            ,("\n", defAttr)
-            ,(view renderedContent r, defAttr)
+            ,("\n", myDefAttr)
+            ,(view renderedContent r, myDefAttr)
             ]
 
 newList' :: Show b => Int -> IO (Widget (List a b))
 newList' i = do l <- newList i
-                setSelectedFocusedAttr l (Just myDefAttr)
+                setSelectedFocusedAttr l (Just myDefHighlight)
+                setNormalAttribute l myDefAttr
                 return l
 
-myDefAttr :: Attr
-myDefAttr = black' `on` orange `withStyle` bold
+myDefHighlight :: Attr
+myDefHighlight = black' `on` orange `withStyle` bold
   where black' = rgbColor (0 :: Int) 0 0
+
+myDefAttr :: Attr
+myDefAttr = defAttr `withForeColor` white
 
 orange :: Color
 orange = rgbColor 215 135 (0 :: Int)
 
 myHeaderHighlight :: Attr
-myHeaderHighlight = defAttr `withForeColor` orange `withStyle` bold
+myHeaderHighlight = myDefAttr `withForeColor` orange `withStyle` bold
 
 withAcid :: AcidState Database -> IO ()
 withAcid acid = do
