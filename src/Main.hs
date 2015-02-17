@@ -252,7 +252,7 @@ channelKeyHandler :: Widget (List Channel FormattedText)
                   -> Key
                   -> b
                   -> IO Bool
-channelKeyHandler _ _ _ _ (KChar 'q') _= exitSuccess >> return True
+channelKeyHandler _ _ _ _ (KChar 'Q') _= exitSuccess >> return True
 channelKeyHandler w footer acid _ (KChar 'u') _= do
   setText footer "Updating..."
   void . forkIO $ do
