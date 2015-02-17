@@ -6,7 +6,6 @@
 module LambdaFeed.Types (Channel(Channel)
                         ,channelTitle
                         ,channelUrl
-                        ,describeChannel
 
                         ,FeedItem(FeedItem)
                         ,itemTitle
@@ -63,17 +62,13 @@ data Channel = Channel { _channelTitle :: Text
 makeLenses ''Channel
 $(deriveSafeCopy 0 'base ''Channel)
 
-describeChannel :: Channel -> Text
-describeChannel (Channel title Nothing) = title
-describeChannel (Channel title (Just url)) = url <> ":  " <> title
-
 data FeedItem = FeedItem { _itemTitle :: Maybe Text
-                         , _itemUrl :: Maybe Text
-                         , _itemCommentUrl :: Maybe Text
-                         , _itemContent :: Maybe Text
-                         , _itemPubDate :: UTCTime
-                         , _itemChannel :: Channel
-                         } deriving (Show, Eq, Ord, Data, Typeable)
+                          , _itemUrl :: Maybe Text
+                          , _itemCommentUrl :: Maybe Text
+                          , _itemContent :: Maybe Text
+                          , _itemPubDate :: UTCTime
+                          , _itemChannel :: Channel
+                          } deriving (Show, Eq, Ord, Data, Typeable)
 $(deriveSafeCopy 0 'base ''FeedItem)
 makeLenses ''FeedItem
 

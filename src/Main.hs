@@ -13,7 +13,7 @@ module Main where
 import           Control.Applicative
 import           Control.Concurrent (forkIO)
 import           Control.Exception (bracket, SomeException, try)
-import           Control.Lens (from, view, non, (%~), (&), to)
+import           Control.Lens (from, view, non, (%~), (&))
 import           Control.Monad.Reader
 import           Data.Acid
 import           Data.Acid.Advanced (update', query')
@@ -117,7 +117,7 @@ updateChannelFromAcid w acid = do
         total = numItemsRead + numItemsUnread
         fmtTotal = sformat ("(" % int % "/" % int % ")") numItemsUnread total
     lbl <- plainText $ sformat ((left 11 ' ' %. stext) % " " % stext)
-                               fmtTotal (describeChannel chan)
+                               fmtTotal (view channelTitle chan)
     addToList w chan lbl
 
 updateItemsFromAcid :: Channel
@@ -152,13 +152,14 @@ renderItem i =
                                                                        ]
         content = view (itemContent . non "Cannot render content.") i
         pandocResult = content & _Text %~ pandocRender
-        feedTitle' = view (itemChannel . to describeChannel) $ i
+        feedTitle' = view (itemChannel . channelTitle) $ i
         itemTitle' = view (itemTitle . non "<No title>") i
-        itemLink' = view (itemUrl . non "<No link>") i
-        itemComments' = view (itemCommentUrl . non "<No comments link>") i
+        itemLink' = stripSlash . view (itemUrl . non "<No link>") $ i
+        itemComments' = stripSlash $ view (itemCommentUrl . non "<No comments link>") i
         pubDate' = formatPubDate . view itemPubDate $ i
         formatPubDate :: UTCTime -> Text
         formatPubDate = T.pack . formatTime defaultTimeLocale rfc822DateFormat
+        stripSlash = T.dropWhileEnd (=='/')
 
 display :: RenderedItem -> [(Text,Attr)]
 display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
