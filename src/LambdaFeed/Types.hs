@@ -27,7 +27,6 @@ module LambdaFeed.Types (Channel(Channel)
                         ,readFeeds
                         ,unreadFeeds
                         ,initialDb
-                        ,markItemAsRead
 
                         ,AllItems(..)
                         ,UnreadItems(..)
@@ -93,11 +92,6 @@ unreadItems = view unreadFeeds
 
 allItems :: Query Database (Map Channel (Seq FeedItem), Map Channel (Seq FeedItem))
 allItems = (,) <$> view unreadFeeds <*> view readFeeds
-
-markItemAsRead :: FeedItem -> Update Database ()
-markItemAsRead i = do
-  unreadFeeds %= (at (view itemChannel i) .~ Nothing)
-  readFeeds %= (ix (view itemChannel i) %~ \is -> is Seq.>< (Seq.singleton i))
 
 updateFeeds :: Seq FeedItem -> Update Database ()
 updateFeeds feeds = do
