@@ -194,7 +194,8 @@ withAcid :: AcidState Database -> IO ()
 withAcid acid = do
   header <- plainText "λ Feed"
   footer <- plainText ""
-  channelList <- (newList' 1)
+
+  channelList <- newList' 1
   channelList `onKeyPressed` viKeys
   updateChannelFromAcid channelList acid
   channelUI <- centered channelList >>= wrap header footer
@@ -203,7 +204,7 @@ withAcid acid = do
   fgChannel `onKeyPressed` (channelKeyHandler channelList footer acid)
   void $ addToFocusGroup fgChannel channelList
 
-  itemList <- (newList' 1)
+  itemList <- newList' 1
   itemList `onKeyPressed` viKeys
   itemUI <- centered itemList >>= wrap header footer
 
