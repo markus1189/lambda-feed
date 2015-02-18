@@ -34,18 +34,17 @@ module LambdaFeed.Types (Channel(Channel)
                         ) where
 
 import           Control.Applicative
-import           Control.Arrow ((&&&))
-import           Control.Lens (view, use, lazy, _2, at, ix)
+import           Control.Lens (view, use, lazy, at, non)
 import           Control.Lens.Operators
 import           Control.Lens.TH
 import           Data.Acid
 import           Data.Data (Data, Typeable)
 import           Data.Digest.Pure.SHA
 import           Data.Foldable
+import           Data.Function (on)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Monoid ((<>))
-import           Data.Ord (comparing)
 import           Data.SafeCopy
 import           Data.Sequence (Seq, (><))
 import qualified Data.Sequence as Seq
@@ -96,18 +95,20 @@ allItems = (,) <$> view unreadFeeds <*> view readFeeds
 updateFeeds :: Seq FeedItem -> Update Database ()
 updateFeeds feeds = do
   seen <- use seenItems
-  unreadFeeds %= \uf -> Map.unionWith (><) uf (buildStoreWithNew seen feeds)
+  unreadFeeds %= fmap (Seq.sortBy (\i1 i2 -> (compare `on` view itemPubDate) i2 i1))
+               . Map.unionWith (><) (collectNewItems seen feeds)
   seenItems %= Set.union (computeSHAs feeds)
 
-buildStoreWithNew :: (Functor f, Foldable f) => Set String -> f FeedItem -> Map Channel (Seq FeedItem)
-buildStoreWithNew seen = Map.fromListWith (><)
-                       . map (_2 %~ Seq.sortBy (comparing $ view itemPubDate)
-                              . Seq.filter (\item ->
-                           case showDigest <$> (itemSHA item) of
-                             Nothing -> False
-                             Just hash -> not (Set.member hash seen)))
-                       . toList
-                       . fmap (view itemChannel &&& Seq.singleton)
+collectNewItems :: (Functor f, Foldable f) => Set String -> f FeedItem -> Map Channel (Seq FeedItem)
+collectNewItems seen = foldl' step Map.empty
+  where isNew (itemSHA -> (Just hash)) = not (Set.member (showDigest hash) seen)
+        isNew _ = False
+
+        step :: Map Channel (Seq FeedItem) -> FeedItem -> Map Channel (Seq FeedItem)
+        step acc item = if isNew item
+                           then acc & at (view itemChannel item) . non Seq.empty
+                                    %~ (|> item)
+                           else acc
 
 computeSHAs :: Foldable f => f FeedItem -> Set String
 computeSHAs = foldl' go Set.empty
