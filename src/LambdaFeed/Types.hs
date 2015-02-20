@@ -15,6 +15,11 @@ module LambdaFeed.Types (Channel(Channel)
                         ,itemContent
                         ,itemChannel
                         ,itemPubDate
+                        ,itemId
+
+                        ,ItemId
+                        ,_IdFromFeed
+                        ,_IdFromContentSHA
 
                         ,RenderedItem(RenderedItem)
                         ,renderedFeed
@@ -23,6 +28,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,renderedCommentUrl
                         ,renderedPubDate
                         ,renderedContent
+                        ,renderedId
 
                         ,Database(Database)
                         ,readFeeds
@@ -58,7 +64,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ) where
 
 import           Control.Applicative
-import           Control.Lens (view, use, lazy, at, non)
+import           Control.Lens (view, use, lazy, at, non, review)
 import           Control.Lens.Operators
 import           Control.Lens.TH
 import           Control.Monad.IO.Class (MonadIO)
@@ -80,7 +86,7 @@ import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import           Data.Time
-import Graphics.Vty.Widgets.All (Widget, List, FormattedText)
+import           Graphics.Vty.Widgets.All (Widget, List, FormattedText)
 
 data Channel = Channel { _channelTitle :: Text
                        , _channelUrl :: Maybe Text
@@ -88,13 +94,19 @@ data Channel = Channel { _channelTitle :: Text
 makeLenses ''Channel
 $(deriveSafeCopy 0 'base ''Channel)
 
+data ItemId = IdFromFeed String | IdFromContentSHA String
+  deriving (Show,Eq,Ord,Data,Typeable)
+$(deriveSafeCopy 0 'base ''ItemId)
+makePrisms ''ItemId
+
 data FeedItem = FeedItem { _itemTitle :: Maybe Text
-                          , _itemUrl :: Maybe Text
-                          , _itemCommentUrl :: Maybe Text
-                          , _itemContent :: Maybe Text
-                          , _itemPubDate :: UTCTime
-                          , _itemChannel :: Channel
-                          } deriving (Show, Eq, Ord, Data, Typeable)
+                         , _itemUrl :: Maybe Text
+                         , _itemCommentUrl :: Maybe Text
+                         , _itemContent :: Maybe Text
+                         , _itemPubDate :: UTCTime
+                         , _itemChannel :: Channel
+                         , _itemId :: Maybe ItemId
+                         } deriving (Show, Eq, Ord, Data, Typeable)
 $(deriveSafeCopy 0 'base ''FeedItem)
 makeLenses ''FeedItem
 
@@ -104,12 +116,13 @@ data RenderedItem = RenderedItem { _renderedFeed :: Text
                                  , _renderedCommentUrl :: Text
                                  , _renderedPubDate :: Text
                                  , _renderedContent :: Text
+                                 , _renderedId :: Text
                                  } deriving (Eq,Show)
 makeLenses ''RenderedItem
 
 data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
                          , _readFeeds :: Map Channel (Seq FeedItem)
-                         , _seenItems :: Set String
+                         , _seenItems :: Set ItemId
                          } deriving (Data,Typeable)
 $(deriveSafeCopy 1 'base ''Database)
 makeLenses ''Database
@@ -124,12 +137,12 @@ updateFeeds :: Seq FeedItem -> Update Database ()
 updateFeeds feeds = do
   seen <- use seenItems
   unreadFeeds %= fmap (Seq.sortBy (\i1 i2 -> (compare `on` view itemPubDate) i2 i1))
-               . Map.unionWith (><) (collectNewItems seen feeds)
-  seenItems %= Set.union (computeSHAs feeds)
+               . Map.unionWith (><) (collectNewItems (`Set.member` seen) feeds)
+  seenItems %= Set.union (generateIdentifiers feeds)
 
-collectNewItems :: (Functor f, Foldable f) => Set String -> f FeedItem -> Map Channel (Seq FeedItem)
-collectNewItems seen = foldl' step Map.empty
-  where isNew (itemSHA -> (Just hash)) = not (Set.member (showDigest hash) seen)
+collectNewItems :: (Functor f, Foldable f) => (ItemId -> Bool) -> f FeedItem -> Map Channel (Seq FeedItem)
+collectNewItems isKnown = foldl' step Map.empty
+  where isNew (guidOrSHA -> (Just guid)) = not (isKnown guid)
         isNew _ = False
 
         step :: Map Channel (Seq FeedItem) -> FeedItem -> Map Channel (Seq FeedItem)
@@ -138,14 +151,15 @@ collectNewItems seen = foldl' step Map.empty
                                     %~ (|> item)
                            else acc
 
-computeSHAs :: Foldable f => f FeedItem -> Set String
-computeSHAs = foldl' go Set.empty
-  where go acc (itemSHA -> Just hash) = Set.insert (showDigest hash) acc
+generateIdentifiers :: Foldable f => f FeedItem -> Set ItemId
+generateIdentifiers = foldl' go Set.empty
+  where go acc (guidOrSHA -> Just guid) = Set.insert guid acc
         go acc _ = acc
 
-itemSHA :: FeedItem -> Maybe (Digest SHA1State)
-itemSHA i = sha1 . view lazy . T.encodeUtf8 <$> (maybeItemContent <> maybeChannelTitle)
-  where maybeItemContent = view itemContent i
+guidOrSHA :: FeedItem -> Maybe ItemId
+guidOrSHA i = view itemId i <|> (review _IdFromContentSHA . showDigest) <$> sha
+  where sha = sha1 . view lazy . T.encodeUtf8 <$> (maybeItemContent <> maybeChannelTitle)
+        maybeItemContent = view itemContent i
         maybeChannelTitle = view (itemChannel . channelUrl) i
 
 $(makeAcidic ''Database ['unreadItems, 'allItems, 'updateFeeds])

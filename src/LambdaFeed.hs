@@ -70,7 +70,7 @@ showContentFor item = do
 
 renderItemContent :: FeedItem -> RenderedItem
 renderItemContent i =
-  RenderedItem feedTitle' itemTitle' itemLink' itemComments' pubDate' pandocResult
+  RenderedItem feedTitle' itemTitle' itemLink' itemComments' pubDate' pandocResult guid
   where pandocRender = unsafePerformIO . readProcess "/usr/bin/pandoc" ["-f"
                                                                        ,"html"
                                                                        ,"-t"
@@ -83,6 +83,7 @@ renderItemContent i =
         itemTitle' = view (itemTitle . non "<No title>") i
         itemLink' = stripSlash . view (itemUrl . non "<No link>") $ i
         itemComments' = stripSlash $ view (itemCommentUrl . non "<No comments link>") i
+        guid = maybe "<No identifier>" (T.pack . show) $ view itemId i
         pubDate' = formatPubDate . view itemPubDate $ i
         formatPubDate :: UTCTime -> Text
         formatPubDate = T.pack . formatTime defaultTimeLocale rfc822DateFormat
@@ -92,6 +93,7 @@ display :: RenderedItem -> [(Text,Attr)]
 display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
             ,("Title: " <> view renderedItemTitle r, myHeaderHighlight)
             ,("Link: " <> view renderedUrl r, myHeaderHighlight)
+            ,("ID: " <> view renderedId r, myHeaderHighlight)
             ,("Comments: " <> view renderedCommentUrl r, myHeaderHighlight)
             ,("Date: " <> view renderedPubDate r, myHeaderHighlight)
             ,("\n", myDefAttr)

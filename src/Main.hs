@@ -13,18 +13,21 @@ module Main (main) where
 import           Control.Applicative
 import           Control.Concurrent (forkIO)
 import           Control.Exception (bracket, SomeException, try)
-import           Control.Lens (from, view)
+import           Control.Lens (from, view, review, lazy, below)
 import           Control.Monad.Reader
 import           Data.Acid
 import           Data.Acid.Advanced (update', query')
 import           Data.Acid.Local (createCheckpointAndClose)
+import           Data.Digest.Pure.SHA
 import           Data.Foldable
 import qualified Data.Map as Map
 import           Data.Maybe (fromJust)
+import           Data.Monoid ((<>))
 import           Data.Sequence (Seq, (><))
 import qualified Data.Sequence as Seq
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import           Data.Text.Lazy.Lens (utf8, packed)
 import           Data.Time (getCurrentTime, UTCTime)
 import           Formatting (sformat, left, (%), (%.), stext, int)
@@ -63,13 +66,15 @@ explode :: UTCTime -> Feed -> Seq FeedItem
 explode now f = fmap (convertFeedItem now f) (Seq.fromList $ getFeedItems f)
 
 convertFeedItem :: UTCTime -> Feed -> Item -> FeedItem
-convertFeedItem now f i = FeedItem title url curl content pubDateOrNow chan
+convertFeedItem now f i = FeedItem title url curl content pubDateOrNow chan guid
   where title = T.pack <$> (getItemTitle i)
         url = T.pack <$> getItemLink i
         curl = T.pack <$> getItemCommentLink i
         content = getFeedContent i
+        guid = (review _IdFromFeed . snd) <$> getItemId i <|> sha
         chan = Channel (T.pack (getFeedTitle f)) (T.pack <$> (getFeedHome f))
         pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
+        sha = review (below _IdFromContentSHA) $ showDigest . sha1 . view lazy . T.encodeUtf8 <$> (content <> title)
 
 fetchAll :: [String] -> IO (Seq FeedItem)
 fetchAll urls = getCurrentTime >>= \t -> foldM (go t) Seq.empty urls
