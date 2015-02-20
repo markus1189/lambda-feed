@@ -46,6 +46,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,lfAcid
                         ,lfSwitch
                         ,lfWidgets
+                        ,lfUrls
 
                         ,SwitchTo(SwitchTo)
                         ,switchToChannels
@@ -188,6 +189,7 @@ makeLenses ''LFWidgets
 data LFCfg = LFCfg { _lfAcid :: AcidState Database
                    , _lfSwitch :: SwitchTo
                    , _lfWidgets :: LFWidgets
+                   , _lfUrls :: [String]
                    }
 makeLenses ''LFCfg
 

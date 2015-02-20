@@ -182,7 +182,7 @@ setupGui trigger acid = do
   itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
     void $ trigger (ItemActivated item)
 
-  let cfg = LFCfg acid switches widgets
+  let cfg = LFCfg acid switches widgets feedsToFetch
       switches = SwitchTo channelView itemView contentView
       widgets = LFWidgets channelList itemList contentWidget'
   return (cfg,initialLFState,c)
