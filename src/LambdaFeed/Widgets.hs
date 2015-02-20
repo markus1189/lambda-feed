@@ -1,5 +1,9 @@
 module LambdaFeed.Widgets (newArticleWidget
                           ,setArticle
+                          ,myDefHighlight
+                          ,myDefAttr
+                          ,orange
+                          ,myHeaderHighlight
                           ) where
 
 import           Data.Foldable (for_)
@@ -25,3 +29,16 @@ setArticle w contents = do
     for_ (T.lines content)  $ \line -> do
       lineW <- plainTextWithAttrs [(line,attr)]
       addToList w line lineW
+
+myDefHighlight :: Attr
+myDefHighlight = black' `on` orange `withStyle` bold
+  where black' = rgbColor (0 :: Int) 0 0
+
+myDefAttr :: Attr
+myDefAttr = defAttr `withForeColor` white
+
+orange :: Color
+orange = rgbColor 215 135 (0 :: Int)
+
+myHeaderHighlight :: Attr
+myHeaderHighlight = myDefAttr `withForeColor` orange `withStyle` bold

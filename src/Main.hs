@@ -8,44 +8,39 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
-module Main where
+module Main (main) where
 
 import           Control.Applicative
 import           Control.Concurrent (forkIO)
 import           Control.Exception (bracket, SomeException, try)
-import           Control.Lens (from, view, non, (%~), (&))
+import           Control.Lens (from, view)
 import           Control.Monad.Reader
 import           Data.Acid
 import           Data.Acid.Advanced (update', query')
 import           Data.Acid.Local (createCheckpointAndClose)
 import           Data.Foldable
 import qualified Data.Map as Map
-import           Data.Maybe (fromJust, isJust)
-import           Data.Monoid ((<>))
+import           Data.Maybe (fromJust)
 import           Data.Sequence (Seq, (><))
 import qualified Data.Sequence as Seq
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Text.Lazy.Lens (utf8, packed)
-import           Data.Text.Lens (_Text)
-import           Data.Time (formatTime, defaultTimeLocale, rfc822DateFormat)
 import           Data.Time (getCurrentTime, UTCTime)
 import           Formatting (sformat, left, (%), (%.), stext, int)
-import           Formatting.Time (monthNameShort, dayOfMonth)
-import           Graphics.Vty hiding ((<|>), update, text)
+import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar))
 import           Graphics.Vty.Widgets.All hiding (wrap)
 import qualified Network.Wreq as Wreq
 import           Network.Wreq hiding (Proxy, get, put, header)
-import           System.Exit (exitSuccess)
-import           System.IO.Unsafe (unsafePerformIO)
-import           System.Process (readProcess)
+import           Pipes.Concurrent (send, spawn', bounded, atomically)
 import qualified Text.Atom.Feed as Atom
 import           Text.Feed.Import
 import           Text.Feed.Query
 import           Text.Feed.Types
 
-import           LambdaFeed.Widgets
+import           LambdaFeed
 import           LambdaFeed.Types
+import           LambdaFeed.Widgets
 
 hn :: String
 hn = "https://news.ycombinator.com/rss"
@@ -63,9 +58,6 @@ feedsToFetch = [hn
                ,"http://lifehacker.com/index.xml"
                ,"http://www.reddit.com/r/haskell/.rss"
                ]
-
-catMaybesSeq :: Seq (Maybe a) -> Seq a
-catMaybesSeq = fmap fromJust . Seq.filter isJust
 
 explode :: UTCTime -> Feed -> Seq FeedItem
 explode now f = fmap (convertFeedItem now f) (Seq.fromList $ getFeedItems f)
@@ -92,21 +84,6 @@ fetch url = do
   case feedOrErr of
     Left _ -> return Nothing
     Right feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
-
-addAll :: Foldable f => Widget (List FeedItem FormattedText) -> f FeedItem -> IO ()
-addAll list set = for_ (zip [(1::Int)..] (toList set)) $ \(i,item) -> do
-  let description = fromJust (view itemTitle item <|> view itemUrl item <|> Just "<unknown>")
-      pdate = view itemPubDate item
-      fmt = (left 4 ' ' %. int)
-          % "  "
-          % monthNameShort
-          % " "
-          % dayOfMonth
-          % "   "
-          % stext
-  label <- plainText $ sformat fmt i pdate pdate description
-  addToList list item label
-
 updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState Database -> IO ()
 updateChannelFromAcid w acid = do
   (unreadItems,readItems) <- query' acid AllItems
@@ -120,15 +97,6 @@ updateChannelFromAcid w acid = do
                                fmtTotal (view channelTitle chan)
     addToList w chan lbl
 
-updateItemsFromAcid :: Channel
-                    -> Widget (List FeedItem FormattedText)
-                    -> AcidState Database
-                    -> IO ()
-updateItemsFromAcid k w acid = do
-  items <- query' acid UnreadItems
-  clearList w
-  addAll w (items Map.! k)
-
 wrap :: (Show a, Show b, Show c)
      => Widget a
      -> Widget b
@@ -141,57 +109,16 @@ wrap header footer widget = do
   setNormalAttribute footer' $ Attr KeepCurrent KeepCurrent (SetTo black)
   pure header' <--> pure widget <--> pure footer'
 
-renderItem :: FeedItem -> RenderedItem
-renderItem i =
-  RenderedItem feedTitle' itemTitle' itemLink' itemComments' pubDate' pandocResult
-  where pandocRender = unsafePerformIO . readProcess "/usr/bin/pandoc" ["-f"
-                                                                       ,"html"
-                                                                       ,"-t"
-                                                                       ,"markdown"
-                                                                       ,"--reference-links"
-                                                                       ]
-        content = view (itemContent . non "Cannot render content.") i
-        pandocResult = content & _Text %~ pandocRender
-        feedTitle' = view (itemChannel . channelTitle) $ i
-        itemTitle' = view (itemTitle . non "<No title>") i
-        itemLink' = stripSlash . view (itemUrl . non "<No link>") $ i
-        itemComments' = stripSlash $ view (itemCommentUrl . non "<No comments link>") i
-        pubDate' = formatPubDate . view itemPubDate $ i
-        formatPubDate :: UTCTime -> Text
-        formatPubDate = T.pack . formatTime defaultTimeLocale rfc822DateFormat
-        stripSlash = T.dropWhileEnd (=='/')
-
-display :: RenderedItem -> [(Text,Attr)]
-display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
-            ,("Title: " <> view renderedItemTitle r, myHeaderHighlight)
-            ,("Link: " <> view renderedUrl r, myHeaderHighlight)
-            ,("Comments: " <> view renderedCommentUrl r, myHeaderHighlight)
-            ,("Date: " <> view renderedPubDate r, myHeaderHighlight)
-            ,("\n", myDefAttr)
-            ,(view renderedContent r, myDefAttr)
-            ]
-
 newList' :: Show b => Int -> IO (Widget (List a b))
 newList' i = do l <- newList i
                 setSelectedFocusedAttr l (Just myDefHighlight)
                 setNormalAttribute l myDefAttr
                 return l
 
-myDefHighlight :: Attr
-myDefHighlight = black' `on` orange `withStyle` bold
-  where black' = rgbColor (0 :: Int) 0 0
-
-myDefAttr :: Attr
-myDefAttr = defAttr `withForeColor` white
-
-orange :: Color
-orange = rgbColor 215 135 (0 :: Int)
-
-myHeaderHighlight :: Attr
-myHeaderHighlight = myDefAttr `withForeColor` orange `withStyle` bold
-
-withAcid :: AcidState Database -> IO ()
-withAcid acid = do
+setupGui :: (GuiEvent -> IO Bool)
+         -> AcidState Database
+         -> IO (LFCfg, LFState, Collection)
+setupGui trigger acid = do
   header <- plainText "λ Feed"
   footer <- plainText ""
 
@@ -201,7 +128,17 @@ withAcid acid = do
   channelUI <- centered channelList >>= wrap header footer
 
   fgChannel <- newFocusGroup
-  fgChannel `onKeyPressed` (channelKeyHandler channelList footer acid)
+  fgChannel `onKeyPressed` \_ k _ -> case k of
+    (KChar 'u') -> do
+      setText footer "Updating..."
+      void . forkIO $ do
+        feeds <- fetchAll feedsToFetch
+        update' acid (UpdateFeeds feeds)
+        updateChannelFromAcid channelList acid
+        schedule $ setText footer "Done."
+      return True
+    _ -> return False
+
   void $ addToFocusGroup fgChannel channelList
 
   itemList <- newList' 1
@@ -209,61 +146,40 @@ withAcid acid = do
   itemUI <- centered itemList >>= wrap header footer
 
   fgItems <- newFocusGroup
-  fgItems `onKeyPressed` (channelKeyHandler channelList footer acid)
   void $ addToFocusGroup fgItems itemList
 
-  contentWidget <- newArticleWidget
-  contentUI <- wrap header footer contentWidget
+  contentWidget' <- newArticleWidget
+  contentUI <- wrap header footer contentWidget'
   fgContent <- newFocusGroup
-  void $ addToFocusGroup fgContent contentWidget
+  void $ addToFocusGroup fgContent contentWidget'
 
   c <- newCollection
   channelView <- addToCollection c channelUI fgChannel
   itemView <- addToCollection c itemUI fgItems
   contentView <- addToCollection c contentUI fgContent
 
-  channelList `onItemActivated` \(ActivateItemEvent _ item _) -> do
-    clearList itemList
-    updateItemsFromAcid item itemList acid
-    itemView
-
-  itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
-    setArticle contentWidget (display (renderItem item))
-    contentView
-
   fgItems `onKeyPressed` \_ k _ -> case k of
-    (KChar 's') -> channelView >> return True
-    (KChar 'q') -> channelView >> return True
+    (KChar 'q') -> trigger BackToChannels
     _ -> return False
 
   fgChannel `onKeyPressed` \_ k _ -> case k of
-    (KChar 's') -> itemView >> return True
+    (KChar 'Q') -> trigger QuitLambdaFeed
     _ -> return False
 
   fgContent `onKeyPressed` \_ k _ -> case k of
-    (KChar 'q') -> itemView >> return True
+    (KChar 'q') -> trigger BackToItems
     _ -> return False
 
-  runUi c defaultContext
-  exitSuccess
+  channelList `onItemActivated` \(ActivateItemEvent _ chan _) -> do
+    void $ trigger (ChannelActivated chan)
 
-channelKeyHandler :: Widget (List Channel FormattedText)
-                  -> Widget FormattedText
-                  -> AcidState Database
-                  -> a
-                  -> Key
-                  -> b
-                  -> IO Bool
-channelKeyHandler _ _ _ _ (KChar 'Q') _= exitSuccess >> return True
-channelKeyHandler w footer acid _ (KChar 'u') _= do
-  setText footer "Updating..."
-  void . forkIO $ do
-    feeds <- fetchAll feedsToFetch
-    update' acid (UpdateFeeds feeds)
-    updateChannelFromAcid w acid
-    schedule $ setText footer "Done."
-  return True
-channelKeyHandler _ _ _ _ _ _= return False
+  itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
+    void $ trigger (ItemActivated item)
+
+  let cfg = LFCfg acid switches widgets
+      switches = SwitchTo channelView itemView contentView
+      widgets = LFWidgets channelList itemList contentWidget'
+  return (cfg,initialLFState,c)
 
 viKeys :: Widget (List a b) -> Key -> t -> IO Bool
 viKeys = handler
@@ -275,7 +191,12 @@ viKeys = handler
         handler _ _ _ = return False
 
 main :: IO ()
-main = bracket (openLocalState initialDb) createCheckpointAndClose withAcid
+main =
+  bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
+  (output,input,seal) <- spawn' (bounded 1)
+  (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid
+  start seal input cfg s
+  runUi c defaultContext
 
 getFeedContent :: Item -> Maybe Text
 getFeedContent (AtomItem i) = case Atom.entryContent i of

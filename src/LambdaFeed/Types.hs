@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -31,12 +32,38 @@ module LambdaFeed.Types (Channel(Channel)
                         ,AllItems(..)
                         ,UnreadItems(..)
                         ,UpdateFeeds(..)
+
+                        ,LF
+                        ,runLF
+
+                        ,LFCfg(LFCfg)
+                        ,lfAcid
+                        ,lfSwitch
+                        ,lfWidgets
+
+                        ,SwitchTo(SwitchTo)
+                        ,switchToChannels
+                        ,switchToItems
+                        ,switchToContent
+
+                        ,LFWidgets(LFWidgets)
+                        ,channelWidget
+                        ,itemWidget
+                        ,contentWidget
+
+                        ,LFState
+                        ,initialLFState
+
+                        ,GuiEvent(..)
                         ) where
 
 import           Control.Applicative
 import           Control.Lens (view, use, lazy, at, non)
 import           Control.Lens.Operators
 import           Control.Lens.TH
+import           Control.Monad.IO.Class (MonadIO)
+import           Control.Monad.Reader (MonadReader, ReaderT, runReaderT)
+import           Control.Monad.State (MonadState, StateT, evalStateT)
 import           Data.Acid
 import           Data.Data (Data, Typeable)
 import           Data.Digest.Pure.SHA
@@ -53,6 +80,7 @@ import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import           Data.Time
+import Graphics.Vty.Widgets.All (Widget, List, FormattedText)
 
 data Channel = Channel { _channelTitle :: Text
                        , _channelUrl :: Maybe Text
@@ -124,3 +152,44 @@ $(makeAcidic ''Database ['unreadItems, 'allItems, 'updateFeeds])
 
 initialDb :: Database
 initialDb = Database Map.empty Map.empty Set.empty
+
+data LFState = LFState
+makeLenses ''LFState
+
+initialLFState :: LFState
+initialLFState = LFState
+
+data SwitchTo = SwitchTo { _switchToChannels :: IO ()
+                         , _switchToItems :: IO ()
+                         , _switchToContent :: IO ()
+                         }
+makeLenses ''SwitchTo
+
+data LFWidgets = LFWidgets { _channelWidget :: Widget (List Channel FormattedText)
+                           , _itemWidget :: Widget (List FeedItem FormattedText)
+                           , _contentWidget :: Widget (List Text FormattedText)
+                           }
+makeLenses ''LFWidgets
+
+data LFCfg = LFCfg { _lfAcid :: AcidState Database
+                   , _lfSwitch :: SwitchTo
+                   , _lfWidgets :: LFWidgets
+                   }
+makeLenses ''LFCfg
+
+newtype LF a = LF (ReaderT LFCfg (StateT LFState IO) a)
+        deriving (Functor, Applicative, Monad
+                 ,MonadReader LFCfg
+                 ,MonadState LFState
+                 ,MonadIO)
+
+runLF :: LFCfg -> LFState -> LF a -> IO a
+runLF cfg state (LF act) = flip evalStateT state . flip runReaderT cfg $ act
+
+data GuiEvent = ChannelActivated Channel
+              | ItemActivated FeedItem
+              | ShowChannels
+              | QuitLambdaFeed
+              | BackToChannels
+              | BackToItems
+              deriving Show
