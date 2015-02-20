@@ -61,10 +61,12 @@ module LambdaFeed.Types (Channel(Channel)
                         ,channelWidget
                         ,itemWidget
                         ,contentWidget
+                        ,statusBarWidget
 
                         ,LFState
                         ,initialLFState
                         ,lfVisibility
+                        ,lfCurrentChannel
 
                         ,GuiEvent(..)
                         ) where
@@ -137,11 +139,13 @@ data Visibility = OnlyUnread | OnlyRead | ReadAndUnread
   deriving (Show, Eq, Data, Typeable)
 $(deriveSafeCopy 0 'base ''Visibility)
 
-data LFState = LFState { _lfVisibility :: Visibility }
+data LFState = LFState { _lfVisibility :: Visibility
+                       , _lfCurrentChannel :: Maybe Channel
+                        }
 makeLenses ''LFState
 
 initialLFState :: LFState
-initialLFState = LFState OnlyUnread
+initialLFState = LFState OnlyUnread Nothing
 
 data SwitchTo = SwitchTo { _switchToChannels :: IO ()
                          , _switchToItems :: IO ()
@@ -152,6 +156,7 @@ makeLenses ''SwitchTo
 data LFWidgets = LFWidgets { _channelWidget :: Widget (List Channel FormattedText)
                            , _itemWidget :: Widget (List FeedItem FormattedText)
                            , _contentWidget :: Widget (List Text FormattedText)
+                           , _statusBarWidget :: Widget FormattedText
                            }
 makeLenses ''LFWidgets
 
@@ -178,9 +183,10 @@ data GuiEvent = ChannelActivated Channel
               | BackToChannels
               | BackToItems
               | MarkChannelRead
-              | ToggleVisibility
+              | ToggleChannelVisibility
+              | ToggleItemVisibility
+              | FetchAll
               deriving Show
-
 
 getChannels :: Visibility -> Query Database [Channel]
 getChannels OnlyUnread = Map.keys <$> view unreadFeeds

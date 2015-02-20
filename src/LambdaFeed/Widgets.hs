@@ -49,4 +49,4 @@ saveSelection :: MonadIO m => Widget (List a b) -> m () -> m ()
 saveSelection w act = do
   maybeSelected <- liftIO (getSelected w)
   act
-  for_ maybeSelected $ \(i,_) -> liftIO (setSelected w i)
+  for_ maybeSelected $ \(i,_) -> liftIO (schedule $ setSelected w i)

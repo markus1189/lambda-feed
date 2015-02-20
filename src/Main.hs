@@ -10,36 +10,14 @@
 {-# LANGUAGE ViewPatterns #-}
 module Main (main) where
 
-import           Control.Applicative
-import           Control.Concurrent (forkIO)
-import           Control.Exception (bracket, SomeException, try)
-import           Control.Lens (from, view, review, lazy, below)
+import           Control.Exception (bracket)
 import           Control.Monad.Reader
 import           Data.Acid
-import           Data.Acid.Advanced (update', query')
 import           Data.Acid.Local (createCheckpointAndClose)
-import           Data.Digest.Pure.SHA
-import           Data.Foldable
-import qualified Data.Map as Map
-import           Data.Maybe (fromJust)
-import           Data.Monoid ((<>))
-import           Data.Sequence (Seq, (><))
-import qualified Data.Sequence as Seq
 import           Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import           Data.Text.Lazy.Lens (utf8, packed)
-import           Data.Time (getCurrentTime, UTCTime)
-import           Formatting (sformat, left, (%), (%.), stext, int)
 import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar))
 import           Graphics.Vty.Widgets.All hiding (wrap)
-import qualified Network.Wreq as Wreq
-import           Network.Wreq hiding (Proxy, get, put, header)
 import           Pipes.Concurrent (send, spawn', bounded, atomically)
-import qualified Text.Atom.Feed as Atom
-import           Text.Feed.Import
-import           Text.Feed.Query
-import           Text.Feed.Types
 
 import           LambdaFeed
 import           LambdaFeed.Types
@@ -62,58 +40,17 @@ feedsToFetch = [hn
                ,"http://www.reddit.com/r/haskell/.rss"
                ]
 
-explode :: UTCTime -> Feed -> Seq FeedItem
-explode now f = fmap (convertFeedItem now f) (Seq.fromList $ getFeedItems f)
-
-convertFeedItem :: UTCTime -> Feed -> Item -> FeedItem
-convertFeedItem now f i = FeedItem title url curl content pubDateOrNow chan guid
-  where title = T.pack <$> (getItemTitle i)
-        url = T.pack <$> getItemLink i
-        curl = T.pack <$> getItemCommentLink i
-        content = getFeedContent i
-        guid = (review _IdFromFeed . snd) <$> getItemId i <|> sha
-        chan = Channel (T.pack (getFeedTitle f)) (T.pack <$> (getFeedHome f))
-        pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
-        sha = review (below _IdFromContentSHA) $ showDigest . sha1 . view lazy . T.encodeUtf8 <$> (content <> title)
-
-fetchAll :: [Text] -> IO (Seq FeedItem)
-fetchAll urls = getCurrentTime >>= \t -> foldM (go t) Seq.empty urls
-  where go now acc url = maybe acc (\feed -> acc >< (explode now feed)) <$> fetch url
-
-try' :: IO a -> IO (Either SomeException a)
-try' = try
-
-fetch :: Text -> IO (Maybe Feed)
-fetch url = do
-  feedOrErr <- try' (Wreq.get (T.unpack url))
-  case feedOrErr of
-    Left _ -> return Nothing
-    Right feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
-updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState Database -> IO ()
-updateChannelFromAcid w acid = do
-  (unreadItems,readItems) <- query' acid AllItems
-  saveSelection w $ do
-    clearList w
-    for_ (Map.keys unreadItems) $ \chan -> do
-      let numItemsUnread = maybe 0 Seq.length $ Map.lookup chan unreadItems
-          numItemsRead = maybe 0 Seq.length $ Map.lookup chan readItems
-          total = numItemsRead + numItemsUnread
-          fmtTotal = sformat ("(" % int % "/" % int % ")") numItemsUnread total
-      lbl <- plainText $ sformat ((left 11 ' ' %. stext) % " " % stext)
-                                 fmtTotal (view channelTitle chan)
-      addToList w chan lbl
-
 wrap :: (Show a, Show b, Show c)
      => Widget a
      -> Widget b
      -> Widget c
      -> IO (Widget (Box (Box (Box a HFill) c) (Box b HFill)))
-wrap header footer widget = do
+wrap header statusBar widget = do
   header' <- pure header <++> hFill ' ' 1
-  footer' <- pure footer <++> hFill ' ' 1
+  statusbar' <- pure statusBar <++> hFill ' ' 1
   setNormalAttribute header' $ Attr KeepCurrent KeepCurrent (SetTo black)
-  setNormalAttribute footer' $ Attr KeepCurrent KeepCurrent (SetTo black)
-  pure header' <--> pure widget <--> pure footer'
+  setNormalAttribute statusbar' $ Attr KeepCurrent KeepCurrent (SetTo black)
+  pure header' <--> pure widget <--> pure statusbar'
 
 newList' :: Show b => Int -> IO (Widget (List a b))
 newList' i = do l <- newList i
@@ -126,36 +63,25 @@ setupGui :: (GuiEvent -> IO Bool)
          -> IO (LFCfg, LFState, Collection)
 setupGui trigger acid = do
   header <- plainText "λ Feed"
-  footer <- plainText ""
+  statusBar <- plainText ""
 
   channelList <- newList' 1
   channelList `onKeyPressed` viKeys
-  updateChannelFromAcid channelList acid
-  channelUI <- centered channelList >>= wrap header footer
+  channelUI <- centered channelList >>= wrap header statusBar
 
   fgChannel <- newFocusGroup
-  fgChannel `onKeyPressed` \_ k _ -> case k of
-    (KChar 'u') -> do
-      setText footer "Updating..."
-      void . forkIO $ do
-        feeds <- fetchAll feedsToFetch
-        update' acid (UpdateFeeds feeds)
-        updateChannelFromAcid channelList acid
-        schedule $ setText footer "Done."
-      return True
-    _ -> return False
 
   void $ addToFocusGroup fgChannel channelList
 
   itemList <- newList' 1
   itemList `onKeyPressed` viKeys
-  itemUI <- centered itemList >>= wrap header footer
+  itemUI <- centered itemList >>= wrap header statusBar
 
   fgItems <- newFocusGroup
   void $ addToFocusGroup fgItems itemList
 
   contentWidget' <- newArticleWidget
-  contentUI <- wrap header footer contentWidget'
+  contentUI <- wrap header statusBar contentWidget'
   fgContent <- newFocusGroup
   void $ addToFocusGroup fgContent contentWidget'
 
@@ -165,17 +91,19 @@ setupGui trigger acid = do
   contentView <- addToCollection c contentUI fgContent
 
   fgItems `onKeyPressed` \_ k _ -> case k of
-    (KChar 'q') -> trigger BackToChannels
+    (KChar 'h') -> trigger BackToChannels
+    (KChar 'u') -> trigger ToggleItemVisibility
     _ -> return False
 
   fgChannel `onKeyPressed` \_ k _ -> case k of
     (KChar 'Q') -> trigger QuitLambdaFeed
     (KChar 'A') -> trigger MarkChannelRead
-    (KChar 'l') -> trigger ToggleVisibility
+    (KChar 'u') -> trigger ToggleChannelVisibility
+    (KChar 'r') -> trigger FetchAll
     _ -> return False
 
   fgContent `onKeyPressed` \_ k _ -> case k of
-    (KChar 'q') -> trigger BackToItems
+    (KChar 'h') -> trigger BackToItems
     _ -> return False
 
   channelList `onItemActivated` \(ActivateItemEvent _ chan _) -> do
@@ -186,7 +114,7 @@ setupGui trigger acid = do
 
   let cfg = LFCfg acid switches widgets feedsToFetch
       switches = SwitchTo channelView itemView contentView
-      widgets = LFWidgets channelList itemList contentWidget'
+      widgets = LFWidgets channelList itemList contentWidget' statusBar
   return (cfg,initialLFState,c)
 
 viKeys :: Widget (List a b) -> Key -> t -> IO Bool
@@ -204,11 +132,5 @@ main =
   (output,input,seal) <- spawn' (bounded 1)
   (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid
   start seal input cfg s
+  atomically $ send output BackToChannels
   runUi c defaultContext
-
-getFeedContent :: Item -> Maybe Text
-getFeedContent (AtomItem i) = case Atom.entryContent i of
-  Just (Atom.HTMLContent c) -> Just (T.pack c)
-  _ -> Nothing
-getFeedContent i@(RSSItem _) = T.pack <$> getItemDescription i
-getFeedContent _ = Nothing
