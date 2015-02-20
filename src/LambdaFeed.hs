@@ -39,7 +39,7 @@ showItemsFor chan = do
   acid <- view lfAcid
   items <- query' acid UnreadItems
   switchAction <- view (lfSwitch . switchToItems)
-  void . liftIO $ schedule $ do
+  void . liftIO $ schedule $ saveSelection widget $ do
     clearList widget
     case items ^. at chan of
       Nothing -> return ()

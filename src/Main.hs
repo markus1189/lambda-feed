@@ -92,15 +92,16 @@ fetch url = do
 updateChannelFromAcid :: Widget (List Channel FormattedText) -> AcidState Database -> IO ()
 updateChannelFromAcid w acid = do
   (unreadItems,readItems) <- query' acid AllItems
-  clearList w
-  for_ (Map.keys unreadItems) $ \chan -> do
-    let numItemsUnread = maybe 0 Seq.length $ Map.lookup chan unreadItems
-        numItemsRead = maybe 0 Seq.length $ Map.lookup chan readItems
-        total = numItemsRead + numItemsUnread
-        fmtTotal = sformat ("(" % int % "/" % int % ")") numItemsUnread total
-    lbl <- plainText $ sformat ((left 11 ' ' %. stext) % " " % stext)
-                               fmtTotal (view channelTitle chan)
-    addToList w chan lbl
+  saveSelection w $ do
+    clearList w
+    for_ (Map.keys unreadItems) $ \chan -> do
+      let numItemsUnread = maybe 0 Seq.length $ Map.lookup chan unreadItems
+          numItemsRead = maybe 0 Seq.length $ Map.lookup chan readItems
+          total = numItemsRead + numItemsUnread
+          fmtTotal = sformat ("(" % int % "/" % int % ")") numItemsUnread total
+      lbl <- plainText $ sformat ((left 11 ' ' %. stext) % " " % stext)
+                                 fmtTotal (view channelTitle chan)
+      addToList w chan lbl
 
 wrap :: (Show a, Show b, Show c)
      => Widget a

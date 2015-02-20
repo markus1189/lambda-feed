@@ -1,5 +1,6 @@
 module LambdaFeed.Widgets (newArticleWidget
                           ,setArticle
+                          ,saveSelection
                           ,myDefHighlight
                           ,myDefAttr
                           ,orange
@@ -11,6 +12,7 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Graphics.Vty
 import           Graphics.Vty.Widgets.All
+import Control.Monad.IO.Class
 
 newArticleWidget :: Show b => IO (Widget (List a b))
 newArticleWidget = do
@@ -42,3 +44,9 @@ orange = rgbColor 215 135 (0 :: Int)
 
 myHeaderHighlight :: Attr
 myHeaderHighlight = myDefAttr `withForeColor` orange `withStyle` bold
+
+saveSelection :: MonadIO m => Widget (List a b) -> m () -> m ()
+saveSelection w act = do
+  maybeSelected <- liftIO (getSelected w)
+  act
+  for_ maybeSelected $ \(i,_) -> liftIO (setSelected w i)
