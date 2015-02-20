@@ -35,9 +35,13 @@ module LambdaFeed.Types (Channel(Channel)
                         ,unreadFeeds
                         ,initialDb
 
+                        ,Visibility(..)
+
                         ,AllItems(..)
-                        ,UnreadItems(..)
+                        ,GetItems(..)
+                        ,GetChannels(..)
                         ,UpdateFeeds(..)
+                        ,MarkAsRead(..)
 
                         ,LF
                         ,runLF
@@ -60,6 +64,7 @@ module LambdaFeed.Types (Channel(Channel)
 
                         ,LFState
                         ,initialLFState
+                        ,lfVisibility
 
                         ,GuiEvent(..)
                         ) where
@@ -128,16 +133,89 @@ data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
 $(deriveSafeCopy 1 'base ''Database)
 makeLenses ''Database
 
-unreadItems :: Query Database (Map Channel (Seq FeedItem))
-unreadItems = view unreadFeeds
+data Visibility = OnlyUnread | OnlyRead | ReadAndUnread
+  deriving (Show, Eq, Data, Typeable)
+$(deriveSafeCopy 0 'base ''Visibility)
+
+data LFState = LFState { _lfVisibility :: Visibility }
+makeLenses ''LFState
+
+initialLFState :: LFState
+initialLFState = LFState OnlyUnread
+
+data SwitchTo = SwitchTo { _switchToChannels :: IO ()
+                         , _switchToItems :: IO ()
+                         , _switchToContent :: IO ()
+                         }
+makeLenses ''SwitchTo
+
+data LFWidgets = LFWidgets { _channelWidget :: Widget (List Channel FormattedText)
+                           , _itemWidget :: Widget (List FeedItem FormattedText)
+                           , _contentWidget :: Widget (List Text FormattedText)
+                           }
+makeLenses ''LFWidgets
+
+data LFCfg = LFCfg { _lfAcid :: AcidState Database
+                   , _lfSwitch :: SwitchTo
+                   , _lfWidgets :: LFWidgets
+                   , _lfUrls :: [Text]
+                   }
+makeLenses ''LFCfg
+
+newtype LF a = LF (ReaderT LFCfg (StateT LFState IO) a)
+        deriving (Functor, Applicative, Monad
+                 ,MonadReader LFCfg
+                 ,MonadState LFState
+                 ,MonadIO)
+
+runLF :: LFCfg -> LFState -> LF a -> IO a
+runLF cfg state (LF act) = flip evalStateT state . flip runReaderT cfg $ act
+
+data GuiEvent = ChannelActivated Channel
+              | ItemActivated FeedItem
+              | ShowChannels
+              | QuitLambdaFeed
+              | BackToChannels
+              | BackToItems
+              | MarkChannelRead
+              | ToggleVisibility
+              deriving Show
+
+
+getChannels :: Visibility -> Query Database [Channel]
+getChannels OnlyUnread = Map.keys <$> view unreadFeeds
+getChannels OnlyRead = Map.keys <$> view readFeeds
+getChannels ReadAndUnread = do
+  u <- Map.keysSet <$> view unreadFeeds
+  r <- Map.keysSet <$> view readFeeds
+  return $ toList (u `Set.union` r)
+
+getItems :: Visibility -> Channel -> Query Database (Seq FeedItem)
+getItems OnlyUnread c = view (unreadFeeds . at c . non Seq.empty)
+getItems OnlyRead c = view (readFeeds . at c . non Seq.empty)
+getItems ReadAndUnread c = do
+  unreadItems <- view (unreadFeeds . at c . non Seq.empty)
+  readItems <- view (readFeeds . at c . non Seq.empty)
+  return . reverseDateSort $ readItems >< unreadItems
 
 allItems :: Query Database (Map Channel (Seq FeedItem), Map Channel (Seq FeedItem))
 allItems = (,) <$> view unreadFeeds <*> view readFeeds
 
+markAsRead :: Channel -> Update Database ()
+markAsRead c = do
+  maybeToMove <- unreadFeeds . at c <<.= Nothing
+  case maybeToMove of
+    Nothing -> return ()
+    Just toMove ->
+      readFeeds . at c . non Seq.empty %= reverseDateSort . (>< toMove)
+
+reverseDateSort :: Seq FeedItem -> Seq FeedItem
+reverseDateSort = Seq.sortBy (\i1 i2 -> (compare `on` view itemPubDate) i2 i1)
+
 updateFeeds :: Seq FeedItem -> Update Database ()
 updateFeeds feeds = do
   seen <- use seenItems
-  unreadFeeds %= fmap (Seq.sortBy (\i1 i2 -> (compare `on` view itemPubDate) i2 i1))
+  unreadFeeds %= fmap reverseDateSort
                . Map.unionWith (><) (collectNewItems (`Set.member` seen) feeds)
   seenItems %= Set.union (generateIdentifiers feeds)
 
@@ -163,49 +241,7 @@ guidOrSHA i = view itemId i <|> (review _IdFromContentSHA . showDigest) <$> sha
         maybeItemContent = view itemContent i
         maybeChannelTitle = view (itemChannel . channelUrl) i
 
-$(makeAcidic ''Database ['unreadItems, 'allItems, 'updateFeeds])
+$(makeAcidic ''Database ['getItems, 'allItems, 'updateFeeds, 'markAsRead, 'getChannels])
 
 initialDb :: Database
 initialDb = Database Map.empty Map.empty Set.empty
-
-data LFState = LFState
-makeLenses ''LFState
-
-initialLFState :: LFState
-initialLFState = LFState
-
-data SwitchTo = SwitchTo { _switchToChannels :: IO ()
-                         , _switchToItems :: IO ()
-                         , _switchToContent :: IO ()
-                         }
-makeLenses ''SwitchTo
-
-data LFWidgets = LFWidgets { _channelWidget :: Widget (List Channel FormattedText)
-                           , _itemWidget :: Widget (List FeedItem FormattedText)
-                           , _contentWidget :: Widget (List Text FormattedText)
-                           }
-makeLenses ''LFWidgets
-
-data LFCfg = LFCfg { _lfAcid :: AcidState Database
-                   , _lfSwitch :: SwitchTo
-                   , _lfWidgets :: LFWidgets
-                   , _lfUrls :: [String]
-                   }
-makeLenses ''LFCfg
-
-newtype LF a = LF (ReaderT LFCfg (StateT LFState IO) a)
-        deriving (Functor, Applicative, Monad
-                 ,MonadReader LFCfg
-                 ,MonadState LFState
-                 ,MonadIO)
-
-runLF :: LFCfg -> LFState -> LF a -> IO a
-runLF cfg state (LF act) = flip evalStateT state . flip runReaderT cfg $ act
-
-data GuiEvent = ChannelActivated Channel
-              | ItemActivated FeedItem
-              | ShowChannels
-              | QuitLambdaFeed
-              | BackToChannels
-              | BackToItems
-              deriving Show

@@ -45,16 +45,16 @@ import           LambdaFeed
 import           LambdaFeed.Types
 import           LambdaFeed.Widgets
 
-hn :: String
+hn :: Text
 hn = "https://news.ycombinator.com/rss"
 
-runningmusic :: String
+runningmusic :: Text
 runningmusic = "http://www.reddit.com/r/runningmusic/.rss"
 
-nullprogram :: String
+nullprogram :: Text
 nullprogram = "http://nullprogram.com/feed/"
 
-feedsToFetch :: [String]
+feedsToFetch :: [Text]
 feedsToFetch = [hn
                ,runningmusic
                ,nullprogram
@@ -76,16 +76,16 @@ convertFeedItem now f i = FeedItem title url curl content pubDateOrNow chan guid
         pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
         sha = review (below _IdFromContentSHA) $ showDigest . sha1 . view lazy . T.encodeUtf8 <$> (content <> title)
 
-fetchAll :: [String] -> IO (Seq FeedItem)
+fetchAll :: [Text] -> IO (Seq FeedItem)
 fetchAll urls = getCurrentTime >>= \t -> foldM (go t) Seq.empty urls
   where go now acc url = maybe acc (\feed -> acc >< (explode now feed)) <$> fetch url
 
 try' :: IO a -> IO (Either SomeException a)
 try' = try
 
-fetch :: String -> IO (Maybe Feed)
+fetch :: Text -> IO (Maybe Feed)
 fetch url = do
-  feedOrErr <- try' (Wreq.get url)
+  feedOrErr <- try' (Wreq.get (T.unpack url))
   case feedOrErr of
     Left _ -> return Nothing
     Right feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
@@ -170,6 +170,8 @@ setupGui trigger acid = do
 
   fgChannel `onKeyPressed` \_ k _ -> case k of
     (KChar 'Q') -> trigger QuitLambdaFeed
+    (KChar 'A') -> trigger MarkChannelRead
+    (KChar 'l') -> trigger ToggleVisibility
     _ -> return False
 
   fgContent `onKeyPressed` \_ k _ -> case k of
