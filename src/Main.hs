@@ -92,6 +92,7 @@ setupGui trigger acid = do
 
   fgItems `onKeyPressed` \_ k _ -> case k of
     (KChar 'h') -> trigger BackToChannels
+    (KChar 'l') -> activateCurrentItem itemList >> return True
     (KChar 'u') -> trigger ToggleItemVisibility
     _ -> return False
 
@@ -100,6 +101,7 @@ setupGui trigger acid = do
     (KChar 'A') -> trigger MarkChannelRead
     (KChar 'u') -> trigger ToggleChannelVisibility
     (KChar 'r') -> trigger FetchAll
+    (KChar 'l') -> activateCurrentItem channelList >> return True
     _ -> return False
 
   fgContent `onKeyPressed` \_ k _ -> case k of
