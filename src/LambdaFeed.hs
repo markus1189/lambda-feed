@@ -212,7 +212,7 @@ executeExternal item = do
   (command,args) <- view lfExternalCommand
   let maybeUrlTitle = (,) <$> view itemUrl item <*> view itemTitle item
   for_ maybeUrlTitle $ \(url,title) ->
-    liftIO . void $ rawSystem command $ args ++ [(T.unpack url), (T.unpack title)]
+    liftIO . forkIO . void . try' $ rawSystem command $ args ++ [(T.unpack url), (T.unpack title)]
 
 updateChannelWidget :: LF ()
 updateChannelWidget = do
