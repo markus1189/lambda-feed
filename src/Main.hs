@@ -99,6 +99,7 @@ setupGui trigger acid = do
 
   fgItems `onKeyPressed` \_ k _ -> case k of
     (KChar 'h') -> trigger BackToChannels
+    (KChar 'q') -> trigger BackToChannels
     (KChar 'l') -> activateCurrentItem itemList >> return True
     (KChar 'u') -> trigger ToggleItemVisibility
     (KChar 'L') -> trigger SwitchToLogging
@@ -115,12 +116,13 @@ setupGui trigger acid = do
 
   fgContent `onKeyPressed` \_ k _ -> case k of
     (KChar 'h') -> trigger BackToItems
+    (KChar 'q') -> trigger BackToItems
     (KChar 'L') -> trigger SwitchToLogging
     _ -> return False
 
   fgLogging `onKeyPressed` \_ k _ -> case k of
-    (KChar 'q') -> trigger BackToChannels
     (KChar 'h') -> trigger BackToChannels
+    (KChar 'q') -> trigger BackToChannels
     _ -> return False
 
   channelList `onItemActivated` \(ActivateItemEvent _ chan _) -> do
