@@ -137,7 +137,7 @@ fetchAllFeeds = do
     void . forkIO $ do
       feeds <- fetchN feedsToFetch
       update' acid (UpdateFeeds feeds)
-    liftIO . schedule $ setText statusbar "Done."
+      liftIO . schedule $ setText statusbar "Done."
 
 explode :: UTCTime -> Feed -> Seq FeedItem
 explode now f = fmap (convertFeedItem now f) (Seq.fromList $ getFeedItems f)
