@@ -57,11 +57,13 @@ module LambdaFeed.Types (Channel(Channel)
                         ,switchToChannels
                         ,switchToItems
                         ,switchToContent
+                        ,switchToLogging
 
                         ,LFWidgets(LFWidgets)
                         ,channelWidget
                         ,itemWidget
                         ,contentWidget
+                        ,loggingWidget
                         ,statusBarWidget
 
                         ,LFState
@@ -151,12 +153,14 @@ initialLFState = LFState OnlyUnread Nothing
 data SwitchTo = SwitchTo { _switchToChannels :: IO ()
                          , _switchToItems :: IO ()
                          , _switchToContent :: IO ()
+                         , _switchToLogging :: IO ()
                          }
 makeLenses ''SwitchTo
 
 data LFWidgets = LFWidgets { _channelWidget :: Widget (List Channel FormattedText)
                            , _itemWidget :: Widget (List FeedItem FormattedText)
                            , _contentWidget :: Widget (List Text FormattedText)
+                           , _loggingWidget :: Widget (List Text FormattedText)
                            , _statusBarWidget :: Widget FormattedText
                            }
 makeLenses ''LFWidgets
@@ -189,6 +193,7 @@ data GuiEvent = ChannelActivated Channel
               | ToggleItemVisibility
               | FetchAll
               | ExternalCommandOnItem FeedItem
+              | SwitchToLogging
               deriving Show
 
 getChannels :: Visibility -> Query Database [Channel]

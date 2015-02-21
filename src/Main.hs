@@ -65,12 +65,18 @@ setupGui trigger acid = do
   header <- plainText "λ Feed"
   statusBar <- plainText ""
 
+  loggingList <- newList' 1
+  loggingList `onKeyPressed` viKeys
+  loggingUI <- centered loggingList >>= wrap header statusBar
+
+  fgLogging <- newFocusGroup
+  void $ addToFocusGroup fgLogging loggingList
+
   channelList <- newList' 1
   channelList `onKeyPressed` viKeys
   channelUI <- centered channelList >>= wrap header statusBar
 
   fgChannel <- newFocusGroup
-
   void $ addToFocusGroup fgChannel channelList
 
   itemList <- newList' 1
@@ -89,11 +95,13 @@ setupGui trigger acid = do
   channelView <- addToCollection c channelUI fgChannel
   itemView <- addToCollection c itemUI fgItems
   contentView <- addToCollection c contentUI fgContent
+  loggingView <- addToCollection c loggingUI fgLogging
 
   fgItems `onKeyPressed` \_ k _ -> case k of
     (KChar 'h') -> trigger BackToChannels
     (KChar 'l') -> activateCurrentItem itemList >> return True
     (KChar 'u') -> trigger ToggleItemVisibility
+    (KChar 'L') -> trigger SwitchToLogging
     _ -> return False
 
   fgChannel `onKeyPressed` \_ k _ -> case k of
@@ -102,10 +110,17 @@ setupGui trigger acid = do
     (KChar 'u') -> trigger ToggleChannelVisibility
     (KChar 'r') -> trigger FetchAll
     (KChar 'l') -> activateCurrentItem channelList >> return True
+    (KChar 'L') -> trigger SwitchToLogging
     _ -> return False
 
   fgContent `onKeyPressed` \_ k _ -> case k of
     (KChar 'h') -> trigger BackToItems
+    (KChar 'L') -> trigger SwitchToLogging
+    _ -> return False
+
+  fgLogging `onKeyPressed` \_ k _ -> case k of
+    (KChar 'q') -> trigger BackToChannels
+    (KChar 'h') -> trigger BackToChannels
     _ -> return False
 
   channelList `onItemActivated` \(ActivateItemEvent _ chan _) -> do
@@ -121,8 +136,8 @@ setupGui trigger acid = do
     void $ trigger (ItemActivated item)
 
   let cfg = LFCfg acid switches widgets feedsToFetch ("bullet-push", ["note"])
-      switches = SwitchTo channelView itemView contentView
-      widgets = LFWidgets channelList itemList contentWidget' statusBar
+      switches = SwitchTo channelView itemView contentView loggingView
+      widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar
   return (cfg,initialLFState,c)
 
 viKeys :: Widget (List a b) -> Key -> t -> IO Bool
@@ -131,7 +146,6 @@ viKeys = handler
         handler w (KChar 'k') _ = scrollUp w >> return True
         handler w (KChar 'g') _ = scrollToBeginning w >> return True
         handler w (KChar 'G') _ = scrollToEnd w >> return True
-        handler w (KChar ':') _ = setSelected w 5 >> return True
         handler _ _ _ = return False
 
 main :: IO ()

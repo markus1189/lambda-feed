@@ -29,7 +29,7 @@ import           Data.Time (getCurrentTime)
 import           Formatting (sformat, left, (%), (%.), stext, int)
 import           Formatting.Time (monthNameShort, dayOfMonth)
 import           Graphics.Vty (Attr)
-import           Graphics.Vty.Widgets.All (clearList, plainText, addToList, getSelected, setText)
+import           Graphics.Vty.Widgets.All (clearList, plainText, addToList, getSelected, setText, insertIntoList)
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
 import           Network.Wreq (responseBody)
 import qualified Network.Wreq as Wreq
@@ -137,7 +137,7 @@ fetchAllFeeds = do
     void . forkIO $ do
       feeds <- fetchN feedsToFetch
       update' acid (UpdateFeeds feeds)
-      liftIO . schedule $ setText statusbar "Done."
+      schedule $ setText statusbar "Done."
 
 explode :: UTCTime -> Feed -> Seq FeedItem
 explode now f = fmap (convertFeedItem now f) (Seq.fromList $ getFeedItems f)
@@ -167,11 +167,13 @@ fetch1 url = do
     Left _ -> return Nothing
     Right feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
 
-
 guiEventHandler :: STM () -> Consumer GuiEvent LF ()
 guiEventHandler seal = forever $ await >>= lift . handle
   where handle :: GuiEvent -> LF ()
-        handle FetchAll = fetchAllFeeds >> updateChannelWidget
+        handle FetchAll = do
+          logIt' "Started update"
+          fetchAllFeeds
+          updateChannelWidget
         handle ShowChannels = showChannels
         handle (ChannelActivated chan) = showItemsFor chan
         handle (ItemActivated item) = showContentFor item
@@ -197,6 +199,7 @@ guiEventHandler seal = forever $ await >>= lift . handle
                              i -> i
            for_ currentChannel $ \curr -> showItemsFor curr
         handle (ExternalCommandOnItem item) = executeExternal item
+        handle SwitchToLogging = view (lfSwitch . switchToLogging) >>= liftIO . schedule
 
 markChannelRead :: LF ()
 markChannelRead = do
@@ -239,3 +242,13 @@ sortAsGiven cs = do
   where indexAsGiven us chan = do
           cUrl <- view channelUrl chan
           findIndex (cUrl `T.isInfixOf`) us
+
+logIt :: Text -> Text -> LF ()
+logIt subject body = do
+  widget <- view (lfWidgets . loggingWidget)
+  liftIO . schedule $ do
+    lbl <- plainText subject
+    insertIntoList widget body lbl 0
+
+logIt' :: Text -> LF ()
+logIt' = join logIt
