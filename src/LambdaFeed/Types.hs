@@ -51,6 +51,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,lfSwitch
                         ,lfWidgets
                         ,lfUrls
+                        ,lfExternalCommand
 
                         ,SwitchTo(SwitchTo)
                         ,switchToChannels
@@ -164,6 +165,7 @@ data LFCfg = LFCfg { _lfAcid :: AcidState Database
                    , _lfSwitch :: SwitchTo
                    , _lfWidgets :: LFWidgets
                    , _lfUrls :: [Text]
+                   , _lfExternalCommand :: (String, [String])
                    }
 makeLenses ''LFCfg
 
@@ -186,6 +188,7 @@ data GuiEvent = ChannelActivated Channel
               | ToggleChannelVisibility
               | ToggleItemVisibility
               | FetchAll
+              | ExternalCommandOnItem FeedItem
               deriving Show
 
 getChannels :: Visibility -> Query Database [Channel]

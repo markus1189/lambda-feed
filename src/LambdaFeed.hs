@@ -37,7 +37,7 @@ import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input)
 import           System.Exit (exitSuccess)
 import           System.IO.Unsafe (unsafePerformIO)
-import           System.Process (readProcess)
+import           System.Process (readProcess, rawSystem)
 import qualified Text.Atom.Feed as Atom
 import           Text.Feed.Import
 import           Text.Feed.Query
@@ -64,7 +64,7 @@ showItemsFor chan = do
   vis <- use lfVisibility
   items <- query' acid (GetItems vis chan)
   switchAction <- view (lfSwitch . switchToItems)
-  void . liftIO $ schedule $ saveSelection widget $ do
+  void . liftIO $ schedule $ do
     clearList widget
     for_ (zip [1..] (toList items)) $ \(i,itm) ->
       plainText (renderItem i itm) >>= addToList widget itm
@@ -196,6 +196,7 @@ guiEventHandler seal = forever $ await >>= lift . handle
                              ReadAndUnread -> OnlyUnread
                              i -> i
            for_ currentChannel $ \curr -> showItemsFor curr
+        handle (ExternalCommandOnItem item) = executeExternal item
 
 markChannelRead :: LF ()
 markChannelRead = do
@@ -205,6 +206,13 @@ markChannelRead = do
   for_ maybeSel $ \(_,(chan,_)) -> do
     update' acid (MarkAsRead chan)
     updateChannelWidget
+
+executeExternal :: FeedItem -> LF ()
+executeExternal item = do
+  (command,args) <- view lfExternalCommand
+  let maybeUrlTitle = (,) <$> view itemUrl item <*> view itemTitle item
+  for_ maybeUrlTitle $ \(url,title) ->
+    liftIO . void $ rawSystem command $ args ++ [(T.unpack url), (T.unpack title)]
 
 updateChannelWidget :: LF ()
 updateChannelWidget = do

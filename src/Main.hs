@@ -10,18 +10,18 @@
 {-# LANGUAGE ViewPatterns #-}
 module Main (main) where
 
-import           Control.Exception (bracket)
-import           Control.Monad.Reader
-import           Data.Acid
-import           Data.Acid.Local (createCheckpointAndClose)
-import           Data.Text (Text)
-import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar))
-import           Graphics.Vty.Widgets.All hiding (wrap)
-import           Pipes.Concurrent (send, spawn', bounded, atomically)
+import Control.Exception (bracket)
+import Control.Monad.Reader
+import Data.Acid
+import Data.Acid.Local (createCheckpointAndClose)
+import Data.Text (Text)
+import Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar))
+import Graphics.Vty.Widgets.All hiding (wrap)
+import Pipes.Concurrent (send, spawn', bounded, atomically)
 
-import           LambdaFeed
-import           LambdaFeed.Types
-import           LambdaFeed.Widgets
+import LambdaFeed
+import LambdaFeed.Types
+import LambdaFeed.Widgets
 
 hn :: Text
 hn = "https://news.ycombinator.com/rss"
@@ -111,10 +111,16 @@ setupGui trigger acid = do
   channelList `onItemActivated` \(ActivateItemEvent _ chan _) -> do
     void $ trigger (ChannelActivated chan)
 
+  itemList `onKeyPressed` \_ k _ -> case k of
+    (KChar 'i') -> do
+      maybeSel <- getSelected itemList
+      maybe (return False) (\(_,(item,_)) -> trigger (ExternalCommandOnItem item)) maybeSel
+    _ -> return False
+
   itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
     void $ trigger (ItemActivated item)
 
-  let cfg = LFCfg acid switches widgets feedsToFetch
+  let cfg = LFCfg acid switches widgets feedsToFetch ("bullet-push", ["note"])
       switches = SwitchTo channelView itemView contentView
       widgets = LFWidgets channelList itemList contentWidget' statusBar
   return (cfg,initialLFState,c)
@@ -134,5 +140,5 @@ main =
   (output,input,seal) <- spawn' (bounded 1)
   (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid
   start seal input cfg s
-  atomically $ send output BackToChannels
+  void . atomically $ send output BackToChannels
   runUi c defaultContext
