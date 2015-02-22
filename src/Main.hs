@@ -10,18 +10,21 @@
 {-# LANGUAGE ViewPatterns #-}
 module Main (main) where
 
-import Control.Exception (bracket)
-import Control.Monad.Reader
-import Data.Acid
-import Data.Acid.Local (createCheckpointAndClose)
-import Data.Text (Text)
-import Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar))
-import Graphics.Vty.Widgets.All hiding (wrap)
-import Pipes.Concurrent (send, spawn', bounded, atomically)
+import           Control.Exception (bracket)
+import           Control.Monad.Reader
+import           Data.Acid
+import           Data.Acid.Local (createCheckpointAndClose)
+import           Data.Functor ((<$>))
+import           Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar), defAttr)
+import           Graphics.Vty.Widgets.All hiding (wrap)
+import           Pipes.Concurrent (send, spawn', bounded, atomically)
 
-import LambdaFeed
-import LambdaFeed.Types
-import LambdaFeed.Widgets
+import           LambdaFeed
+import           LambdaFeed.Types
+import           LambdaFeed.Widgets
 
 hn :: Text
 hn = "https://news.ycombinator.com/rss"
@@ -66,11 +69,19 @@ setupGui trigger acid = do
   statusBar <- plainText ""
 
   loggingList <- newList' 1
+  setSelectedUnfocusedAttr loggingList (Just defAttr)
+  loggingDetailView <- newArticleWidget
   loggingList `onKeyPressed` viKeys
-  loggingUI <- centered loggingList >>= wrap header statusBar
+  loggingCompose <- pure loggingList <--> hBorder <--> vFixed 15 loggingDetailView
+  loggingUI <- centered loggingCompose >>= wrap header statusBar
+
+  loggingList `onSelectionChange` \e -> case e of
+    SelectionOn _ text _ -> setArticle loggingDetailView [(text,defAttr)]
+    _ -> return ()
 
   fgLogging <- newFocusGroup
   void $ addToFocusGroup fgLogging loggingList
+  void $ addToFocusGroup fgLogging loggingDetailView
 
   channelList <- newList' 1
   channelList `onKeyPressed` viKeys
@@ -137,7 +148,8 @@ setupGui trigger acid = do
   itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
     void $ trigger (ItemActivated item)
 
-  let cfg = LFCfg acid switches widgets feedsToFetch ("bullet-push", ["note"])
+  urls <- T.lines <$> T.readFile "urls"
+  let cfg = LFCfg acid switches widgets urls ("bullet-push", ["note"])
       switches = SwitchTo channelView itemView contentView loggingView
       widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar
   return (cfg,initialLFState,c)

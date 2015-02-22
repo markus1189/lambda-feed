@@ -18,6 +18,7 @@ newArticleWidget :: Show b => IO (Widget (List a b))
 newArticleWidget = do
   lst <- newList 1
   setSelectedFocusedAttr lst (Just defAttr)
+  setSelectedUnfocusedAttr lst (Just defAttr)
   lst `onKeyPressed` \this k _ -> case k of
     (KChar ' ') -> pageDown this >> return True
     KBS -> pageUp this >> return True

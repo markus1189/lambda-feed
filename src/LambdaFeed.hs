@@ -5,6 +5,7 @@ import           Control.Applicative
 import           Control.Concurrent (forkIO)
 import           Control.Concurrent.STM (STM)
 import           Control.Exception (try, SomeException)
+import           Control.Exception.Extra (retry)
 import           Control.Lens (view, non, use, below, lazy, from, review)
 import           Control.Lens.Operators
 import           Control.Monad.Reader
@@ -23,13 +24,13 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Text.Lazy.Lens (utf8, packed)
 import           Data.Text.Lens (_Text)
-import           Data.Time (UTCTime)
+import           Data.Time (UTCTime, utcToLocalTime)
 import           Data.Time (formatTime, defaultTimeLocale, rfc822DateFormat)
-import           Data.Time (getCurrentTime)
+import           Data.Time (getCurrentTime, getCurrentTimeZone)
 import           Formatting (sformat, left, (%), (%.), stext, int)
-import           Formatting.Time (monthNameShort, dayOfMonth)
+import           Formatting.Time (monthNameShort, dayOfMonth, hms)
 import           Graphics.Vty (Attr)
-import           Graphics.Vty.Widgets.All (clearList, plainText, addToList, getSelected, setText, insertIntoList)
+import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, getSelected, setText, insertIntoList)
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
 import           Network.Wreq (responseBody)
 import qualified Network.Wreq as Wreq
@@ -212,10 +213,20 @@ markChannelRead = do
 
 executeExternal :: FeedItem -> LF ()
 executeExternal item = do
+  logCmd <- getLogCommand
+  statusLogCmd <- getStatusLogCommand
   (command,args) <- view lfExternalCommand
-  let maybeUrlTitle = (,) <$> view itemUrl item <*> view itemTitle item
-  for_ maybeUrlTitle $ \(url,title) ->
-    liftIO . forkIO . void . try' $ rawSystem command $ args ++ [(T.unpack url), (T.unpack title)]
+  let maybeUrlTitle = (,) <$> (view itemCommentUrl item <|> view itemUrl item) <*> view itemTitle item
+  for_ maybeUrlTitle $ \(url,title) -> do
+    logIt' $ T.pack command <> " " <> url <> " " <> title
+    liftIO . forkIO $ do
+      res <- try' . retry 3 $
+               rawSystem command $ args ++ [(T.unpack url), (T.unpack title)]
+      case res of
+        Left e -> do
+          statusLogCmd "External command failed (see log)."
+          logCmd "Command failed" (T.pack . show $ e)
+        Right _ -> return ()
 
 updateChannelWidget :: LF ()
 updateChannelWidget = do
@@ -246,9 +257,25 @@ sortAsGiven cs = do
 logIt :: Text -> Text -> LF ()
 logIt subject body = do
   widget <- view (lfWidgets . loggingWidget)
-  liftIO . schedule $ do
-    lbl <- plainText subject
-    insertIntoList widget body lbl 0
+  liftIO . schedule $ ioLog widget subject body
 
 logIt' :: Text -> LF ()
 logIt' = join logIt
+
+ioLog :: Widget (List Text FormattedText) -> Text -> Text -> IO ()
+ioLog widget subject body = do
+  t <- utcToLocalTime <$> getCurrentTimeZone <*> getCurrentTime
+  let currTime = sformat hms t
+  lbl <- plainText ("[" <> currTime <> "] " <> subject)
+  insertIntoList widget body lbl 0
+
+getLogCommand :: LF (Text -> Text -> IO ())
+getLogCommand = do
+  widget <- view (lfWidgets . loggingWidget)
+  return $ \subj body -> liftIO . schedule $ ioLog widget subj body
+
+getStatusLogCommand :: LF (Text -> IO ())
+getStatusLogCommand = do
+  widget <- view (lfWidgets . statusBarWidget)
+  return $ \status -> liftIO . schedule $ do
+    setText widget status
