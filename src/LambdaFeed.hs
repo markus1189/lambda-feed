@@ -6,23 +6,19 @@ import           Control.Concurrent (forkIO)
 import           Control.Concurrent.STM (STM)
 import           Control.Exception (try, SomeException)
 import           Control.Exception.Extra (retry)
-import           Control.Lens (view, non, use, below, lazy, from, review)
+import           Control.Lens (view, non, use)
 import           Control.Lens.Operators
 import           Control.Monad.Reader
 import           Data.Acid.Advanced (query', update')
-import           Data.Digest.Pure.SHA
 import           Data.Foldable
 import           Data.List (sortBy, findIndex)
 import qualified Data.Map as Map
 import           Data.Maybe (fromJust)
 import           Data.Monoid ((<>))
 import           Data.Ord (comparing)
-import           Data.Sequence ((><), Seq)
 import qualified Data.Sequence as Seq
 import           Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import           Data.Text.Lazy.Lens (utf8, packed)
 import           Data.Text.Lens (_Text)
 import           Data.Time (UTCTime, utcToLocalTime)
 import           Data.Time (formatTime, defaultTimeLocale, rfc822DateFormat)
@@ -32,30 +28,18 @@ import           Formatting.Time (monthNameShort, dayOfMonth, hms)
 import           Graphics.Vty (Attr)
 import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, getSelected, setText, insertIntoList)
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
-import           Network.Wreq (responseBody)
-import qualified Network.Wreq as Wreq
 import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input)
 import           System.Exit (exitSuccess)
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process (readProcess, rawSystem)
-import qualified Text.Atom.Feed as Atom
-import           Text.Feed.Import
-import           Text.Feed.Query
-import           Text.Feed.Types
 
 import           LambdaFeed.Types
 import           LambdaFeed.Widgets
+import           LambdaFeed.Retrieval (fetch1)
 
 showChannels :: LF ()
 showChannels = view (lfSwitch . switchToChannels) >>= (liftIO . schedule)
-
-getFeedContent :: Item -> Maybe Text
-getFeedContent (AtomItem i) = case Atom.entryContent i of
-  Just (Atom.HTMLContent c) -> Just (T.pack c)
-  _ -> Nothing
-getFeedContent i@(RSSItem _) = T.pack <$> getItemDescription i
-getFeedContent _ = Nothing
 
 showItemsFor :: Channel -> LF ()
 showItemsFor chan = do
@@ -134,39 +118,18 @@ fetchAllFeeds = do
   acid <- view lfAcid
   feedsToFetch <- view lfUrls
   liftIO $ do
-    schedule $ setText statusbar "Updating..."
     void . forkIO $ do
-      feeds <- fetchN feedsToFetch
-      update' acid (UpdateFeeds feeds)
+      for_ feedsToFetch $ \url -> do
+        schedule $ setText statusbar ("Fetching: " <> url)
+        eitherItems <- fetch1 url
+        case eitherItems of
+          Left _ -> return () -- TODO display or log?
+          Right items -> do
+            update' acid (UpdateFeeds items)
       schedule $ setText statusbar "Done."
-
-explode :: UTCTime -> Feed -> Seq FeedItem
-explode now f = fmap (convertFeedItem now f) (Seq.fromList $ getFeedItems f)
-
-convertFeedItem :: UTCTime -> Feed -> Item -> FeedItem
-convertFeedItem now f i = FeedItem title url curl content pubDateOrNow chan guid
-  where title = T.pack <$> (getItemTitle i)
-        url = T.pack <$> getItemLink i
-        curl = T.pack <$> getItemCommentLink i
-        content = getFeedContent i
-        guid = (review _IdFromFeed . snd) <$> getItemId i <|> sha
-        chan = Channel (T.pack (getFeedTitle f)) (T.pack <$> (getFeedHome f))
-        pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
-        sha = review (below _IdFromContentSHA) $ showDigest . sha1 . view lazy . T.encodeUtf8 <$> (content <> title)
-
-fetchN :: [Text] -> IO (Seq FeedItem)
-fetchN urls = getCurrentTime >>= \t -> foldM (go t) Seq.empty urls
-  where go now acc url = maybe acc (\feed -> acc >< (explode now feed)) <$> fetch1 url
 
 try' :: IO a -> IO (Either SomeException a)
 try' = try
-
-fetch1 :: Text -> IO (Maybe Feed)
-fetch1 url = do
-  feedOrErr <- try' (Wreq.get (T.unpack url))
-  case feedOrErr of
-    Left _ -> return Nothing
-    Right feed -> return . parseFeedString . view (responseBody . utf8 . from packed) $ feed
 
 guiEventHandler :: STM () -> Consumer GuiEvent LF ()
 guiEventHandler seal = forever $ await >>= lift . handle
@@ -235,7 +198,7 @@ updateChannelWidget = do
   vis <- use lfVisibility
   (unreadItems,readItems) <- query' acid AllItems
   visibleChannels <- query' acid (GetChannels vis) >>= sortAsGiven
-  saveSelection widget . liftIO . schedule $ do
+  liftIO . saveSelection widget . schedule $ do
     clearList widget
     for_ visibleChannels $ \chan -> do
       let numItemsUnread = maybe 0 Seq.length $ Map.lookup chan unreadItems
