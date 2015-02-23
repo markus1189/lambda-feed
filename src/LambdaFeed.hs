@@ -30,13 +30,14 @@ import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearLis
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
 import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input)
+import qualified Pipes.Prelude as P
 import           System.Exit (exitSuccess)
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process (readProcess, rawSystem)
 
 import           LambdaFeed.Types
 import           LambdaFeed.Widgets
-import           LambdaFeed.Retrieval (fetch1)
+import           LambdaFeed.Retrieval (fetchP)
 
 showChannels :: LF ()
 showChannels = view (lfSwitch . switchToChannels) >>= (liftIO . schedule)
@@ -115,18 +116,15 @@ start seal input cfg s =
 fetchAllFeeds :: LF ()
 fetchAllFeeds = do
   statusbar <- view (lfWidgets . statusBarWidget)
-  acid <- view lfAcid
   feedsToFetch <- view lfUrls
-  liftIO $ do
-    void . forkIO $ do
-      for_ feedsToFetch $ \url -> do
-        schedule $ setText statusbar ("Fetching: " <> url)
-        eitherItems <- fetch1 url
-        case eitherItems of
-          Left _ -> return () -- TODO display or log?
-          Right items -> do
-            update' acid (UpdateFeeds items)
-      schedule $ setText statusbar "Done."
+  trigger <- view triggerEvt
+  liftIO . void . forkIO $ do
+    schedule $ setText statusbar "Fetching..."
+    runEffect $ fetchP feedsToFetch
+            >-> P.mapM (trigger . FetchComplete)
+            >-> P.drain
+    msg <- liftIO $ (<>) <$> timestamp <*> pure " Fetching complete."
+    schedule $ setText statusbar msg
 
 try' :: IO a -> IO (Either SomeException a)
 try' = try
@@ -137,7 +135,6 @@ guiEventHandler seal = forever $ await >>= lift . handle
         handle FetchAll = do
           logIt' "Started update"
           fetchAllFeeds
-          updateChannelWidget
         handle ShowChannels = showChannels
         handle (ChannelActivated chan) = showItemsFor chan
         handle (ItemActivated item) = showContentFor item
@@ -164,6 +161,17 @@ guiEventHandler seal = forever $ await >>= lift . handle
            for_ currentChannel $ \curr -> showItemsFor curr
         handle (ExternalCommandOnItem item) = executeExternal item
         handle SwitchToLogging = view (lfSwitch . switchToLogging) >>= liftIO . schedule
+        handle (FetchComplete (Right (url,items))) = do
+          acid <- view lfAcid
+          statusbar <- view (lfWidgets . statusBarWidget)
+          when (not (Seq.null items)) $ do
+            update' acid (UpdateFeeds items)
+            updateChannelWidget
+          liftIO $ setText statusbar ("Fetched: " <> url)
+        handle (FetchComplete (Left (ConnectionError u e))) =
+          logIt ("Failed: " <> u) (T.pack . show $ e)
+        handle (FetchComplete (Left (FeedParseError u s))) =
+          logIt ("Parse failed: " <> u) s
 
 markChannelRead :: LF ()
 markChannelRead = do
@@ -242,3 +250,9 @@ getStatusLogCommand = do
   widget <- view (lfWidgets . statusBarWidget)
   return $ \status -> liftIO . schedule $ do
     setText widget status
+
+timestamp :: IO Text
+timestamp = do
+  t <- utcToLocalTime <$> getCurrentTimeZone <*> getCurrentTime
+  let currTime = sformat hms t
+  return currTime

@@ -111,24 +111,21 @@ setupGui trigger acid = do
   fgItems `onKeyPressed` \_ k _ -> case k of
     (KChar 'h') -> trigger BackToChannels
     (KChar 'q') -> trigger BackToChannels
-    (KChar 'l') -> activateCurrentItem itemList >> return True
-    (KChar 'u') -> trigger ToggleItemVisibility
-    (KChar 'L') -> trigger SwitchToLogging
+    (KChar 'l') -> trigger ToggleItemVisibility
+    (KChar 'A') -> trigger BackToChannels >> trigger MarkChannelRead
     _ -> return False
 
   fgChannel `onKeyPressed` \_ k _ -> case k of
     (KChar 'Q') -> trigger QuitLambdaFeed
     (KChar 'A') -> trigger MarkChannelRead
-    (KChar 'u') -> trigger ToggleChannelVisibility
-    (KChar 'r') -> trigger FetchAll
-    (KChar 'l') -> activateCurrentItem channelList >> return True
+    (KChar 'l') -> trigger ToggleChannelVisibility
+    (KChar 'u') -> trigger FetchAll
     (KChar 'L') -> trigger SwitchToLogging
     _ -> return False
 
   fgContent `onKeyPressed` \_ k _ -> case k of
     (KChar 'h') -> trigger BackToItems
     (KChar 'q') -> trigger BackToItems
-    (KChar 'L') -> trigger SwitchToLogging
     _ -> return False
 
   fgLogging `onKeyPressed` \_ k _ -> case k of
@@ -149,7 +146,7 @@ setupGui trigger acid = do
     void $ trigger (ItemActivated item)
 
   urls <- T.lines <$> T.readFile "urls"
-  let cfg = LFCfg acid switches widgets urls ("bullet-push", ["note"])
+  let cfg = LFCfg acid switches widgets urls ("bullet-push", ["note"]) (void . trigger)
       switches = SwitchTo channelView itemView contentView loggingView
       widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar
   return (cfg,initialLFState,c)

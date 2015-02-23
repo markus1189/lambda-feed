@@ -52,6 +52,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,lfWidgets
                         ,lfUrls
                         ,lfExternalCommand
+                        ,triggerEvt
 
                         ,SwitchTo(SwitchTo)
                         ,switchToChannels
@@ -72,9 +73,11 @@ module LambdaFeed.Types (Channel(Channel)
                         ,lfCurrentChannel
 
                         ,GuiEvent(..)
+                        ,RetrievalError(..)
                         ) where
 
 import           Control.Applicative
+import           Control.Exception (SomeException)
 import           Control.Lens (view, use, lazy, at, non, review)
 import           Control.Lens.Operators
 import           Control.Lens.TH
@@ -99,6 +102,9 @@ import qualified Data.Text.Encoding as T
 import           Data.Time
 import           Graphics.Vty.Widgets.All (Widget, List, FormattedText)
 
+data RetrievalError = ConnectionError Text SomeException
+                    | FeedParseError Text Text
+                    deriving (Show)
 data Channel = Channel { _channelTitle :: Text
                        , _channelUrl :: Maybe Text
                        } deriving (Show, Eq, Ord, Data, Typeable)
@@ -165,23 +171,6 @@ data LFWidgets = LFWidgets { _channelWidget :: Widget (List Channel FormattedTex
                            }
 makeLenses ''LFWidgets
 
-data LFCfg = LFCfg { _lfAcid :: AcidState Database
-                   , _lfSwitch :: SwitchTo
-                   , _lfWidgets :: LFWidgets
-                   , _lfUrls :: [Text]
-                   , _lfExternalCommand :: (String, [String])
-                   }
-makeLenses ''LFCfg
-
-newtype LF a = LF (ReaderT LFCfg (StateT LFState IO) a)
-        deriving (Functor, Applicative, Monad
-                 ,MonadReader LFCfg
-                 ,MonadState LFState
-                 ,MonadIO)
-
-runLF :: LFCfg -> LFState -> LF a -> IO a
-runLF cfg state (LF act) = flip evalStateT state . flip runReaderT cfg $ act
-
 data GuiEvent = ChannelActivated Channel
               | ItemActivated FeedItem
               | ShowChannels
@@ -194,7 +183,26 @@ data GuiEvent = ChannelActivated Channel
               | FetchAll
               | ExternalCommandOnItem FeedItem
               | SwitchToLogging
+              | FetchComplete (Either RetrievalError (Text, (Seq FeedItem)))
               deriving Show
+
+data LFCfg = LFCfg { _lfAcid :: AcidState Database
+                   , _lfSwitch :: SwitchTo
+                   , _lfWidgets :: LFWidgets
+                   , _lfUrls :: [Text]
+                   , _lfExternalCommand :: (String, [String])
+                   , _triggerEvt :: GuiEvent -> IO ()
+                   }
+makeLenses ''LFCfg
+
+newtype LF a = LF (ReaderT LFCfg (StateT LFState IO) a)
+        deriving (Functor, Applicative, Monad
+                 ,MonadReader LFCfg
+                 ,MonadState LFState
+                 ,MonadIO)
+
+runLF :: LFCfg -> LFState -> LF a -> IO a
+runLF cfg state (LF act) = flip evalStateT state . flip runReaderT cfg $ act
 
 getChannels :: Visibility -> Query Database [Channel]
 getChannels OnlyUnread = Map.keys <$> view unreadFeeds
