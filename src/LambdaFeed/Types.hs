@@ -83,7 +83,6 @@ module LambdaFeed.Types (Channel(Channel)
 
 import           Control.Applicative
 import           Control.Concurrent.Async (Async)
-import           Control.Exception (IOException)
 import           Control.Lens (view, use, lazy, at, non, review)
 import           Control.Lens.Operators
 import           Control.Lens.TH
@@ -107,8 +106,10 @@ import           Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import           Data.Time
 import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, Edit)
+import           Network.HTTP.Client (HttpException)
 
-data RetrievalError = RetrievalIOError Text IOException
+data RetrievalError = RetrievalHttpError Text HttpException
+                    | TimeOutDuringRetrieve Text Int
                     | FeedParseError Text Text
                     deriving (Show)
 data Channel = Channel { _channelTitle :: Text

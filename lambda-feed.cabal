@@ -15,6 +15,7 @@ executable lambda-feed
                      , extra >= 1.1 && < 1.2
                      , base >=4.8 && <4.9
                      , async >= 2.0 && < 2.1
+                     , http-client >= 0.4 && < 0.5
                      , bytestring
                      , containers
                      , feed >= 0.3 && < 0.4

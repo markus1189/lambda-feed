@@ -166,7 +166,7 @@ forkUpdate = do
   statusLog <- getStatusLogCommand
   liftIO . async $ do
     statusLog "Fetching..."
-    runEffect $ fetchP feedsToFetch
+    runEffect $ fetchP (20 * 1000 * 1000) feedsToFetch
             >-> P.mapM (trigger . FetchComplete)
             >-> P.drain
     msg <- liftIO $ (<>) <$> timestamp <*> pure " Fetching complete."
@@ -216,14 +216,17 @@ guiEventHandler seal = forever $ await >>= lift . handle
         handle SwitchToLogging = switchUsing switchToLogging
         handle (FetchComplete (Right (url,items))) = do
           acid <- view lfAcid
+          logIt' $ "Fetched " <> (T.pack . show . length $ items) <> " items from " <> url
           when (not (Seq.null items)) $ do
             update' acid (UpdateFeeds items)
             updateChannelWidget
           statusSet ("Fetched: " <> url)
-        handle (FetchComplete (Left (RetrievalIOError u e))) =
+        handle (FetchComplete (Left (RetrievalHttpError u e))) =
           logIt ("Failed: " <> u) (T.pack . show $ e)
         handle (FetchComplete (Left (FeedParseError u s))) =
           logIt ("Parse failed: " <> u) s
+        handle (FetchComplete (Left (TimeOutDuringRetrieve u i))) =
+          logIt' ("Timed out with a limit of " <> (T.pack . show $ i) <> " μs : " <> u)
         handle CancelUpdate = cancelUpdate
         handle EditUrls = do
           prepareEditUrls
