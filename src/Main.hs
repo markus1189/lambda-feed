@@ -15,33 +15,16 @@ import           Control.Monad.Reader
 import           Data.Acid
 import           Data.Acid.Local (createCheckpointAndClose)
 import           Data.Functor ((<$>))
-import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar), defAttr)
 import           Graphics.Vty.Widgets.All hiding (wrap)
+import qualified Graphics.Vty.Widgets.Text as WT
 import           Pipes.Concurrent (send, spawn', bounded, atomically)
 
 import           LambdaFeed
 import           LambdaFeed.Types
 import           LambdaFeed.Widgets
-
-hn :: Text
-hn = "https://news.ycombinator.com/rss"
-
-runningmusic :: Text
-runningmusic = "http://www.reddit.com/r/runningmusic/.rss"
-
-nullprogram :: Text
-nullprogram = "http://nullprogram.com/feed/"
-
-feedsToFetch :: [Text]
-feedsToFetch = [hn
-               ,runningmusic
-               ,nullprogram
-               ,"http://lifehacker.com/index.xml"
-               ,"http://www.reddit.com/r/haskell/.rss"
-               ]
 
 wrap :: (Show a, Show b, Show c)
      => Widget a
@@ -70,13 +53,13 @@ setupGui trigger acid = do
 
   loggingList <- newList' 1
   setSelectedUnfocusedAttr loggingList (Just defAttr)
-  loggingDetailView <- newArticleWidget
+  loggingDetailView <- textWidget WT.wrap ""
   loggingList `onKeyPressed` viKeys
   loggingCompose <- pure loggingList <--> hBorder <--> vFixed 15 loggingDetailView
   loggingUI <- centered loggingCompose >>= wrap header statusBar
 
   loggingList `onSelectionChange` \e -> case e of
-    SelectionOn _ text _ -> setArticle loggingDetailView [(text,defAttr)]
+    SelectionOn _ text _ -> setText loggingDetailView text
     _ -> return ()
 
   fgLogging <- newFocusGroup
@@ -120,6 +103,7 @@ setupGui trigger acid = do
     (KChar 'A') -> trigger MarkChannelRead
     (KChar 'l') -> trigger ToggleChannelVisibility
     (KChar 'u') -> trigger FetchAll
+    (KChar 'C') -> trigger CancelUpdate
     (KChar 'L') -> trigger SwitchToLogging
     _ -> return False
 
@@ -146,9 +130,9 @@ setupGui trigger acid = do
     void $ trigger (ItemActivated item)
 
   urls <- T.lines <$> T.readFile "urls"
-  let cfg = LFCfg acid switches widgets urls ("bullet-push", ["note"]) (void . trigger)
+  let cfg = LFCfg acid switches widgets urls ("bullet-push", ["link"]) (void . trigger)
       switches = SwitchTo channelView itemView contentView loggingView
-      widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar
+      widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar header
   return (cfg,initialLFState,c)
 
 viKeys :: Widget (List a b) -> Key -> t -> IO Bool

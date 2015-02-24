@@ -66,18 +66,21 @@ module LambdaFeed.Types (Channel(Channel)
                         ,contentWidget
                         ,loggingWidget
                         ,statusBarWidget
+                        ,headerWidget
 
                         ,LFState
                         ,initialLFState
                         ,lfVisibility
                         ,lfCurrentChannel
+                        ,lfUpdateAsync
 
                         ,GuiEvent(..)
                         ,RetrievalError(..)
                         ) where
 
 import           Control.Applicative
-import           Control.Exception (SomeException)
+import           Control.Concurrent.Async (Async)
+import           Control.Exception (IOException)
 import           Control.Lens (view, use, lazy, at, non, review)
 import           Control.Lens.Operators
 import           Control.Lens.TH
@@ -102,7 +105,7 @@ import qualified Data.Text.Encoding as T
 import           Data.Time
 import           Graphics.Vty.Widgets.All (Widget, List, FormattedText)
 
-data RetrievalError = ConnectionError Text SomeException
+data RetrievalError = RetrievalIOError Text IOException
                     | FeedParseError Text Text
                     deriving (Show)
 data Channel = Channel { _channelTitle :: Text
@@ -150,11 +153,12 @@ $(deriveSafeCopy 0 'base ''Visibility)
 
 data LFState = LFState { _lfVisibility :: Visibility
                        , _lfCurrentChannel :: Maybe Channel
-                        }
+                       , _lfUpdateAsync :: Maybe (Async ())
+                       }
 makeLenses ''LFState
 
 initialLFState :: LFState
-initialLFState = LFState OnlyUnread Nothing
+initialLFState = LFState OnlyUnread Nothing Nothing
 
 data SwitchTo = SwitchTo { _switchToChannels :: IO ()
                          , _switchToItems :: IO ()
@@ -168,6 +172,7 @@ data LFWidgets = LFWidgets { _channelWidget :: Widget (List Channel FormattedTex
                            , _contentWidget :: Widget (List Text FormattedText)
                            , _loggingWidget :: Widget (List Text FormattedText)
                            , _statusBarWidget :: Widget FormattedText
+                           , _headerWidget :: Widget FormattedText
                            }
 makeLenses ''LFWidgets
 
@@ -184,6 +189,7 @@ data GuiEvent = ChannelActivated Channel
               | ExternalCommandOnItem FeedItem
               | SwitchToLogging
               | FetchComplete (Either RetrievalError (Text, (Seq FeedItem)))
+              | CancelUpdate
               deriving Show
 
 data LFCfg = LFCfg { _lfAcid :: AcidState Database

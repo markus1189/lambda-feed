@@ -1,7 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 module LambdaFeed.Retrieval (fetch1, fetchP) where
 
-import           Control.Exception.Extra (try_)
+import           Control.Exception.Base (try, IOException)
 import           Control.Lens (view, from, strict)
 import           Data.Functor ((<$>))
 import           Data.Sequence (Seq)
@@ -18,11 +18,14 @@ import           Text.Feed.Import (parseFeedString)
 import           LambdaFeed.Conversion (convertFeedToFeedItems)
 import           LambdaFeed.Types (FeedItem,RetrievalError(..))
 
+tryIO :: IO a -> IO (Either IOException a)
+tryIO = try
+
 fetch1 :: Text -> IO (Either RetrievalError (Seq FeedItem))
 fetch1 url = do
-  feedOrErr <- try_ (Wreq.get (T.unpack url))
+  feedOrErr <- tryIO (Wreq.get (T.unpack url))
   case feedOrErr of
-     Left e -> return . Left $ ConnectionError url e
+     Left e -> return . Left $ RetrievalIOError url e
      Right resp -> do
        case parse resp of
           Nothing -> return . Left $

@@ -1,8 +1,10 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 module LambdaFeed (start) where
 
 import           Control.Applicative
 import           Control.Concurrent (forkIO)
+import           Control.Concurrent.Async (poll,Async, async, cancel)
 import           Control.Concurrent.STM (STM)
 import           Control.Exception (try, SomeException)
 import           Control.Exception.Extra (retry)
@@ -26,7 +28,7 @@ import           Data.Time (getCurrentTime, getCurrentTimeZone)
 import           Formatting (sformat, left, (%), (%.), stext, int)
 import           Formatting.Time (monthNameShort, dayOfMonth, hms)
 import           Graphics.Vty (Attr)
-import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, getSelected, setText, insertIntoList)
+import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, setText, insertIntoList, appendText)
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
 import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input)
@@ -113,33 +115,71 @@ start :: STM () -> Input GuiEvent -> LFCfg -> LFState -> IO ()
 start seal input cfg s =
   void . forkIO $ runLF cfg s . runEffect $ fromInput input >-> guiEventHandler seal
 
+cancelUpdate :: LF ()
+cancelUpdate = do
+  asyn <- use lfUpdateAsync
+  case asyn of
+    Nothing -> logIt' "No update running"
+    Just a -> do
+      liftIO $ cancel a
+      statusSet "Update cancelled"
+      logIt' "Update cancelled"
+
 fetchAllFeeds :: LF ()
 fetchAllFeeds = do
-  statusbar <- view (lfWidgets . statusBarWidget)
+  isDone <- isUpdateFinished
+  if isDone
+    then do
+      logIt' "Started update"
+      newAsync <- forkUpdate
+      lfUpdateAsync ?= newAsync
+    else logIt' "Already updating"
+
+isUpdateFinished :: LF Bool
+isUpdateFinished = do
+  currentAsync <- use lfUpdateAsync
+  case currentAsync of
+    Nothing -> return True
+    Just asyn -> do
+      status <- liftIO $ poll asyn
+      case status of
+        Nothing -> return False
+        Just _ -> return True
+
+forkUpdate :: LF (Async ())
+forkUpdate = do
   feedsToFetch <- view lfUrls
   trigger <- view triggerEvt
-  liftIO . void . forkIO $ do
-    schedule $ setText statusbar "Fetching..."
+  statusLog <- getStatusLogCommand
+  liftIO . async $ do
+    statusLog "Fetching..."
     runEffect $ fetchP feedsToFetch
             >-> P.mapM (trigger . FetchComplete)
             >-> P.drain
     msg <- liftIO $ (<>) <$> timestamp <*> pure " Fetching complete."
-    schedule $ setText statusbar msg
+    statusLog msg
 
 try' :: IO a -> IO (Either SomeException a)
 try' = try
 
+resetHeader :: LF ()
+resetHeader = do
+  w <- view (lfWidgets.headerWidget)
+  liftIO $ setText w "λ Feed"
+
 guiEventHandler :: STM () -> Consumer GuiEvent LF ()
 guiEventHandler seal = forever $ await >>= lift . handle
   where handle :: GuiEvent -> LF ()
-        handle FetchAll = do
-          logIt' "Started update"
-          fetchAllFeeds
+        handle FetchAll = fetchAllFeeds
         handle ShowChannels = showChannels
-        handle (ChannelActivated chan) = showItemsFor chan
+        handle (ChannelActivated chan) = do
+          w <- view (lfWidgets . headerWidget)
+          liftIO $ appendText w (" > " <> view channelTitle chan)
+          showItemsFor chan
         handle (ItemActivated item) = showContentFor item
         handle QuitLambdaFeed = liftIO $ atomically seal >> shutdownUi >> exitSuccess
         handle BackToChannels = do
+          resetHeader
           updateChannelWidget
           view (lfSwitch . switchToChannels) >>= liftIO . schedule
         handle BackToItems = view (lfSwitch . switchToItems) >>= liftIO . schedule
@@ -163,22 +203,21 @@ guiEventHandler seal = forever $ await >>= lift . handle
         handle SwitchToLogging = view (lfSwitch . switchToLogging) >>= liftIO . schedule
         handle (FetchComplete (Right (url,items))) = do
           acid <- view lfAcid
-          statusbar <- view (lfWidgets . statusBarWidget)
           when (not (Seq.null items)) $ do
             update' acid (UpdateFeeds items)
             updateChannelWidget
-          liftIO $ setText statusbar ("Fetched: " <> url)
-        handle (FetchComplete (Left (ConnectionError u e))) =
+          statusSet ("Fetched: " <> url)
+        handle (FetchComplete (Left (RetrievalIOError u e))) =
           logIt ("Failed: " <> u) (T.pack . show $ e)
         handle (FetchComplete (Left (FeedParseError u s))) =
           logIt ("Parse failed: " <> u) s
+        handle CancelUpdate = cancelUpdate
 
 markChannelRead :: LF ()
 markChannelRead = do
-  widget <- view (lfWidgets . channelWidget)
-  maybeSel <- liftIO $ getSelected widget
+  currentChannel <- use lfCurrentChannel
   acid <- view lfAcid
-  for_ maybeSel $ \(_,(chan,_)) -> do
+  for_ currentChannel $ \chan -> do
     update' acid (MarkAsRead chan)
     updateChannelWidget
 
@@ -256,3 +295,8 @@ timestamp = do
   t <- utcToLocalTime <$> getCurrentTimeZone <*> getCurrentTime
   let currTime = sformat hms t
   return currTime
+
+statusSet :: Text -> LF ()
+statusSet t = do
+  w <- view (lfWidgets . statusBarWidget)
+  liftIO $ schedule $ setText w t
