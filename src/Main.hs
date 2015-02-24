@@ -15,9 +15,9 @@ import           Control.Monad.Reader
 import           Data.Acid
 import           Data.Acid.Local (createCheckpointAndClose)
 import           Data.Functor ((<$>))
+import           Data.List (sort)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar), defAttr)
+import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar,KEnter,KEsc), Modifier(..), defAttr, white, rgbColor)
 import           Graphics.Vty.Widgets.All hiding (wrap)
 import qualified Graphics.Vty.Widgets.Text as WT
 import           Pipes.Concurrent (send, spawn', bounded, atomically)
@@ -85,11 +85,18 @@ setupGui trigger acid = do
   fgContent <- newFocusGroup
   void $ addToFocusGroup fgContent contentWidget'
 
+  editUrlWidget' <- multiLineEditWidget
+  setFocusAttribute editUrlWidget' $ white `on` (rgbColor (0::Int) 0 0)
+  urlEditUI <- wrap header statusBar editUrlWidget'
+  fgUrlEdit <- newFocusGroup
+  void $ addToFocusGroup fgUrlEdit editUrlWidget'
+
   c <- newCollection
   channelView <- addToCollection c channelUI fgChannel
   itemView <- addToCollection c itemUI fgItems
   contentView <- addToCollection c contentUI fgContent
   loggingView <- addToCollection c loggingUI fgLogging
+  editUrlView <- addToCollection c urlEditUI fgUrlEdit
 
   fgItems `onKeyPressed` \_ k _ -> case k of
     (KChar 'h') -> trigger BackToChannels
@@ -104,6 +111,7 @@ setupGui trigger acid = do
     (KChar 'l') -> trigger ToggleChannelVisibility
     (KChar 'u') -> trigger FetchAll
     (KChar 'C') -> trigger CancelUpdate
+    (KChar 'E') -> trigger EditUrls
     (KChar 'L') -> trigger SwitchToLogging
     _ -> return False
 
@@ -129,11 +137,24 @@ setupGui trigger acid = do
   itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
     void $ trigger (ItemActivated item)
 
-  urls <- T.lines <$> T.readFile "urls"
-  let cfg = LFCfg acid switches widgets urls ("bullet-push", ["link"]) (void . trigger)
-      switches = SwitchTo channelView itemView contentView loggingView
-      widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar header
-  return (cfg,initialLFState,c)
+  editUrlWidget' `onKeyPressed` \_ k modifier -> do
+    let run f = applyEdit f editUrlWidget' >> return True
+    case (k,modifier) of
+      (KChar '<', sort -> [MMeta]) -> run $ moveCursor (0,0)
+      (KChar '>', sort -> [MMeta]) -> do
+        numLines <- length . T.lines <$> getEditText editUrlWidget'
+        run $ moveCursor (numLines - 1,0)
+      (KChar 'p', [MCtrl]) -> run moveUp
+      (KChar 'n', [MCtrl]) -> run moveDown
+      (KEnter, [MMeta]) -> trigger AcceptUrlEditing
+      (KEsc, []) -> trigger AbortUrlEditing
+      _ -> return False
+
+  let cfg = LFCfg acid switches widgets ("bullet-push", ["link"]) (void . trigger)
+      switches = SwitchTo channelView itemView contentView loggingView editUrlView
+      widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar header editUrlWidget'
+      s = initialLFState
+  return (cfg,s,c)
 
 viKeys :: Widget (List a b) -> Key -> t -> IO Bool
 viKeys = handler

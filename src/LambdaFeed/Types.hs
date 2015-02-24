@@ -42,6 +42,8 @@ module LambdaFeed.Types (Channel(Channel)
                         ,GetChannels(..)
                         ,UpdateFeeds(..)
                         ,MarkAsRead(..)
+                        ,GetTrackedUrls(..)
+                        ,SetTrackedUrls(..)
 
                         ,LF
                         ,runLF
@@ -50,7 +52,6 @@ module LambdaFeed.Types (Channel(Channel)
                         ,lfAcid
                         ,lfSwitch
                         ,lfWidgets
-                        ,lfUrls
                         ,lfExternalCommand
                         ,triggerEvt
 
@@ -59,6 +60,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,switchToItems
                         ,switchToContent
                         ,switchToLogging
+                        ,switchToEditUrl
 
                         ,LFWidgets(LFWidgets)
                         ,channelWidget
@@ -67,6 +69,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,loggingWidget
                         ,statusBarWidget
                         ,headerWidget
+                        ,editUrlWidget
 
                         ,LFState
                         ,initialLFState
@@ -103,7 +106,7 @@ import qualified Data.Set as Set
 import           Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import           Data.Time
-import           Graphics.Vty.Widgets.All (Widget, List, FormattedText)
+import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, Edit)
 
 data RetrievalError = RetrievalIOError Text IOException
                     | FeedParseError Text Text
@@ -143,8 +146,9 @@ makeLenses ''RenderedItem
 data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
                          , _readFeeds :: Map Channel (Seq FeedItem)
                          , _seenItems :: Set ItemId
+                         , _trackedUrls :: [Text]
                          } deriving (Data,Typeable)
-$(deriveSafeCopy 1 'base ''Database)
+$(deriveSafeCopy 2 'base ''Database)
 makeLenses ''Database
 
 data Visibility = OnlyUnread | OnlyRead | ReadAndUnread
@@ -164,6 +168,7 @@ data SwitchTo = SwitchTo { _switchToChannels :: IO ()
                          , _switchToItems :: IO ()
                          , _switchToContent :: IO ()
                          , _switchToLogging :: IO ()
+                         , _switchToEditUrl :: IO ()
                          }
 makeLenses ''SwitchTo
 
@@ -173,6 +178,7 @@ data LFWidgets = LFWidgets { _channelWidget :: Widget (List Channel FormattedTex
                            , _loggingWidget :: Widget (List Text FormattedText)
                            , _statusBarWidget :: Widget FormattedText
                            , _headerWidget :: Widget FormattedText
+                           , _editUrlWidget :: Widget Edit
                            }
 makeLenses ''LFWidgets
 
@@ -190,12 +196,14 @@ data GuiEvent = ChannelActivated Channel
               | SwitchToLogging
               | FetchComplete (Either RetrievalError (Text, (Seq FeedItem)))
               | CancelUpdate
+              | EditUrls
+              | AcceptUrlEditing
+              | AbortUrlEditing
               deriving Show
 
 data LFCfg = LFCfg { _lfAcid :: AcidState Database
                    , _lfSwitch :: SwitchTo
                    , _lfWidgets :: LFWidgets
-                   , _lfUrls :: [Text]
                    , _lfExternalCommand :: (String, [String])
                    , _triggerEvt :: GuiEvent -> IO ()
                    }
@@ -225,6 +233,12 @@ getItems ReadAndUnread c = do
   unreadItems <- view (unreadFeeds . at c . non Seq.empty)
   readItems <- view (readFeeds . at c . non Seq.empty)
   return . reverseDateSort $ readItems >< unreadItems
+
+getTrackedUrls :: Query Database [Text]
+getTrackedUrls = view trackedUrls
+
+setTrackedUrls :: [Text] -> Update Database ()
+setTrackedUrls us = trackedUrls .= us
 
 allItems :: Query Database (Map Channel (Seq FeedItem), Map Channel (Seq FeedItem))
 allItems = (,) <$> view unreadFeeds <*> view readFeeds
@@ -269,7 +283,7 @@ guidOrSHA i = view itemId i <|> (review _IdFromContentSHA . showDigest) <$> sha
         maybeItemContent = view itemContent i
         maybeChannelTitle = view (itemChannel . channelUrl) i
 
-$(makeAcidic ''Database ['getItems, 'allItems, 'updateFeeds, 'markAsRead, 'getChannels])
+$(makeAcidic ''Database ['getItems, 'allItems, 'updateFeeds, 'markAsRead, 'getChannels, 'getTrackedUrls, 'setTrackedUrls])
 
 initialDb :: Database
-initialDb = Database Map.empty Map.empty Set.empty
+initialDb = Database Map.empty Map.empty Set.empty []

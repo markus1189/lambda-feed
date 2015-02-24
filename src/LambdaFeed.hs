@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 module LambdaFeed (start) where
@@ -8,9 +10,10 @@ import           Control.Concurrent.Async (poll,Async, async, cancel)
 import           Control.Concurrent.STM (STM)
 import           Control.Exception (try, SomeException)
 import           Control.Exception.Extra (retry)
-import           Control.Lens (view, non, use)
+import           Control.Lens (view, non, use, Lens')
 import           Control.Lens.Operators
 import           Control.Monad.Reader
+import           Data.Acid
 import           Data.Acid.Advanced (query', update')
 import           Data.Foldable
 import           Data.List (sortBy, findIndex)
@@ -28,7 +31,7 @@ import           Data.Time (getCurrentTime, getCurrentTimeZone)
 import           Formatting (sformat, left, (%), (%.), stext, int)
 import           Formatting.Time (monthNameShort, dayOfMonth, hms)
 import           Graphics.Vty (Attr)
-import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, setText, insertIntoList, appendText)
+import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, setText, insertIntoList, appendText, setEditText, getEditText)
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
 import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input)
@@ -41,16 +44,26 @@ import           LambdaFeed.Types
 import           LambdaFeed.Widgets
 import           LambdaFeed.Retrieval (fetchP)
 
+queryAcid x = do
+  acid <- view lfAcid :: LF (AcidState Database)
+  liftIO $ query' acid x
+
+updateAcid x = do
+  acid <- view lfAcid :: LF (AcidState Database)
+  liftIO $ update' acid x
+
 showChannels :: LF ()
-showChannels = view (lfSwitch . switchToChannels) >>= (liftIO . schedule)
+showChannels = switchUsing switchToChannels
+
+switchUsing :: Lens' SwitchTo (IO ()) -> LF ()
+switchUsing l = view (lfSwitch . l) >>= (liftIO . schedule)
 
 showItemsFor :: Channel -> LF ()
 showItemsFor chan = do
   lfCurrentChannel ?= chan
   widget <- view (lfWidgets . itemWidget)
-  acid <- view lfAcid
   vis <- use lfVisibility
-  items <- query' acid (GetItems vis chan)
+  items <- queryAcid (GetItems vis chan)
   switchAction <- view (lfSwitch . switchToItems)
   void . liftIO $ schedule $ do
     clearList widget
@@ -148,7 +161,7 @@ isUpdateFinished = do
 
 forkUpdate :: LF (Async ())
 forkUpdate = do
-  feedsToFetch <- view lfUrls
+  feedsToFetch <- queryAcid GetTrackedUrls
   trigger <- view triggerEvt
   statusLog <- getStatusLogCommand
   liftIO . async $ do
@@ -181,8 +194,8 @@ guiEventHandler seal = forever $ await >>= lift . handle
         handle BackToChannels = do
           resetHeader
           updateChannelWidget
-          view (lfSwitch . switchToChannels) >>= liftIO . schedule
-        handle BackToItems = view (lfSwitch . switchToItems) >>= liftIO . schedule
+          showChannels
+        handle BackToItems = switchUsing switchToItems
         handle MarkChannelRead = markChannelRead
         handle ToggleChannelVisibility = do
           vis <- use lfVisibility
@@ -200,7 +213,7 @@ guiEventHandler seal = forever $ await >>= lift . handle
                              i -> i
            for_ currentChannel $ \curr -> showItemsFor curr
         handle (ExternalCommandOnItem item) = executeExternal item
-        handle SwitchToLogging = view (lfSwitch . switchToLogging) >>= liftIO . schedule
+        handle SwitchToLogging = switchUsing switchToLogging
         handle (FetchComplete (Right (url,items))) = do
           acid <- view lfAcid
           when (not (Seq.null items)) $ do
@@ -212,6 +225,21 @@ guiEventHandler seal = forever $ await >>= lift . handle
         handle (FetchComplete (Left (FeedParseError u s))) =
           logIt ("Parse failed: " <> u) s
         handle CancelUpdate = cancelUpdate
+        handle EditUrls = do
+          prepareEditUrls
+          switchUsing switchToEditUrl
+        handle AbortUrlEditing = switchUsing switchToChannels
+        handle AcceptUrlEditing = do
+          w <- view (lfWidgets.editUrlWidget)
+          newUrls <- liftIO $ T.lines <$> getEditText w
+          updateAcid (SetTrackedUrls newUrls)
+          switchUsing switchToChannels
+
+prepareEditUrls :: LF ()
+prepareEditUrls = do
+  w <- view (lfWidgets.editUrlWidget)
+  us <- queryAcid (GetTrackedUrls)
+  liftIO $ setEditText w (T.intercalate "\n" us)
 
 markChannelRead :: LF ()
 markChannelRead = do
@@ -243,8 +271,9 @@ updateChannelWidget = do
   widget <- view (lfWidgets . channelWidget)
   acid <- view lfAcid
   vis <- use lfVisibility
-  (unreadItems,readItems) <- query' acid AllItems
-  visibleChannels <- query' acid (GetChannels vis) >>= sortAsGiven
+  urls <- queryAcid GetTrackedUrls
+  (unreadItems,readItems) <- queryAcid AllItems
+  visibleChannels <- sortAsGiven urls <$> query' acid (GetChannels vis)
   liftIO . saveSelection widget . schedule $ do
     clearList widget
     for_ visibleChannels $ \chan -> do
@@ -256,13 +285,11 @@ updateChannelWidget = do
                                           fmtTotal (view channelTitle chan)
       addToList widget chan lbl
 
-sortAsGiven :: Foldable f => f Channel -> LF [Channel]
-sortAsGiven cs = do
-  urls <- view lfUrls
-  return $ sortBy (comparing (indexAsGiven urls)) (toList cs)
-  where indexAsGiven us chan = do
+sortAsGiven :: Foldable f => [Text] -> f Channel -> [Channel]
+sortAsGiven urls cs = sortBy (comparing indexAsGiven) (toList cs)
+  where indexAsGiven chan = do
           cUrl <- view channelUrl chan
-          findIndex (cUrl `T.isInfixOf`) us
+          findIndex (cUrl `T.isInfixOf`) urls
 
 logIt :: Text -> Text -> LF ()
 logIt subject body = do
