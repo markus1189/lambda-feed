@@ -146,7 +146,7 @@ viKeys = handler
 main :: IO ()
 main =
   bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
-  (output,input,seal) <- spawn' (bounded 1)
+  (output,input,seal) <- spawn' (bounded 10)
   (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid
   start seal input cfg s
   void . atomically $ send output BackToChannels
