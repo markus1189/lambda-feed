@@ -290,7 +290,7 @@ sortAsGiven :: Foldable f => [Text] -> f Channel -> [Channel]
 sortAsGiven urls cs = sortBy (comparing indexAsGiven) (toList cs)
   where indexAsGiven chan = do
           cUrl <- view channelUrl chan
-          findIndex (cUrl `T.isInfixOf`) urls
+          findIndex ((||) <$> (cUrl `T.isInfixOf`) <*> (`T.isInfixOf` cUrl)) urls
 
 logIt :: Text -> Text -> LF ()
 logIt subject body = do

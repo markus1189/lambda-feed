@@ -16,7 +16,6 @@ import           Pipes
 import qualified Pipes.Prelude as P
 import           Text.Feed.Import (parseFeedString)
 
-
 import           LambdaFeed.Conversion (convertFeedToFeedItems)
 import           LambdaFeed.Types (FeedItem,RetrievalError(..))
 import           System.Timeout (timeout)
