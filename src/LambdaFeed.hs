@@ -8,13 +8,12 @@ import           Control.Applicative
 import           Control.Concurrent (forkIO)
 import           Control.Concurrent.Async (poll,Async, async, cancel)
 import           Control.Concurrent.STM (STM)
-import           Control.Exception (try, SomeException)
-import           Control.Exception.Extra (retry)
+import           Control.Exception.Extra (retry, try_)
 import           Control.Lens (view, non, use, Lens')
 import           Control.Lens.Operators
 import           Control.Monad.Reader
 import           Data.Acid
-import           Data.Acid.Advanced (query', update')
+import           Data.Acid.Advanced (query', update', MethodState, MethodResult)
 import           Data.Foldable
 import           Data.List (sortBy, findIndex)
 import qualified Data.Map as Map
@@ -44,12 +43,14 @@ import           LambdaFeed.Types
 import           LambdaFeed.Widgets
 import           LambdaFeed.Retrieval (fetchP)
 
+queryAcid :: (QueryEvent e, MethodState e ~ Database) => e -> LF (MethodResult e)
 queryAcid x = do
-  acid <- view lfAcid :: LF (AcidState Database)
+  acid <- view lfAcid
   liftIO $ query' acid x
 
+updateAcid :: (UpdateEvent e, MethodState e ~ Database) => e -> LF (EventResult e)
 updateAcid x = do
-  acid <- view lfAcid :: LF (AcidState Database)
+  acid <- view lfAcid
   liftIO $ update' acid x
 
 showChannels :: LF ()
@@ -172,9 +173,6 @@ forkUpdate = do
     msg <- liftIO $ (<>) <$> timestamp <*> pure " Fetching complete."
     statusLog msg
 
-try' :: IO a -> IO (Either SomeException a)
-try' = try
-
 resetHeader :: LF ()
 resetHeader = do
   w <- view (lfWidgets.headerWidget)
@@ -261,7 +259,7 @@ executeExternal item = do
   for_ maybeUrlTitle $ \(url,title) -> do
     logIt' $ T.pack command <> " " <> url <> " " <> title
     liftIO . forkIO $ do
-      res <- try' . retry 3 $
+      res <- try_ . retry 3 $
                rawSystem command $ args ++ [(T.unpack url), (T.unpack title)]
       case res of
         Left e -> do
