@@ -224,10 +224,13 @@ executeExternal item = do
   (command,args) <- view lfExternalCommand
   let maybeUrlTitle = (,) <$> (view itemCommentUrl item <|> view itemUrl item) <*> view itemTitle item
   for_ maybeUrlTitle $ \(url,title) -> do
-    logIt' $ T.pack command <> " " <> url <> " " <> title
+    logIt' $ T.pack command <> " "
+          <> T.intercalate " " (fmap T.pack args)
+          <> " <" <> title <> ">"
+          <> " <" <> url <> ">"
     liftIO . forkIO $ do
       res <- try_ . retry 3 $
-               rawSystem command $ args ++ [(T.unpack url), (T.unpack title)]
+               rawSystem command $ args ++ [(T.unpack title), (T.unpack url)]
       case res of
         Left e -> do
           statusLogCmd "External command failed (see log)."
