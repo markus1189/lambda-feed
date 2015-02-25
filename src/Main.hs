@@ -11,6 +11,7 @@
 module Main (main) where
 
 import           Control.Exception (bracket)
+import           Control.Lens.Operators
 import           Control.Monad.Reader
 import           Data.Acid
 import           Data.Acid.Local (createCheckpointAndClose)
@@ -23,8 +24,11 @@ import qualified Graphics.Vty.Widgets.Text as WT
 import           Pipes.Concurrent (send, spawn', bounded, atomically)
 
 import           LambdaFeed
+import           LambdaFeed.Actor
+import           LambdaFeed.Retrieval
 import           LambdaFeed.Types
 import           LambdaFeed.Widgets
+
 
 wrap :: (Show a, Show b, Show c)
      => Widget a
@@ -46,8 +50,9 @@ newList' i = do l <- newList i
 
 setupGui :: (GuiEvent -> IO Bool)
          -> AcidState Database
+         -> Actor FetcherControl FetcherEvent
          -> IO (LFCfg, LFState, Collection)
-setupGui trigger acid = do
+setupGui trigger acid fetcher = do
   header <- plainText "λ Feed"
   statusBar <- plainText ""
 
@@ -107,7 +112,6 @@ setupGui trigger acid = do
 
   fgChannel `onKeyPressed` \_ k _ -> case k of
     (KChar 'Q') -> trigger QuitLambdaFeed
-    (KChar 'A') -> trigger MarkChannelRead
     (KChar 'l') -> trigger ToggleChannelVisibility
     (KChar 'u') -> trigger FetchAll
     (KChar 'C') -> trigger CancelUpdate
@@ -150,7 +154,7 @@ setupGui trigger acid = do
       (KEsc, []) -> trigger AbortUrlEditing
       _ -> return False
 
-  let cfg = LFCfg acid switches widgets ("bullet-push", ["link"]) (void . trigger)
+  let cfg = LFCfg acid switches widgets ("bullet-push", ["link"]) (void . trigger) fetcher
       switches = SwitchTo channelView itemView contentView loggingView editUrlView
       widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar header editUrlWidget'
       s = initialLFState
@@ -165,10 +169,10 @@ viKeys = handler
         handler _ _ _ = return False
 
 main :: IO ()
-main =
-  bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
+main = bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
+  fetcher <- fetchActor (30 * 1000 * 1000)
   (output,input,seal) <- spawn' (bounded 10)
-  (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid
-  start seal input cfg s
+  (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid fetcher
+  start seal (fetcher ^. actorOutbox) input cfg s
   void . atomically $ send output BackToChannels
   runUi c defaultContext

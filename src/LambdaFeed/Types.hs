@@ -53,6 +53,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,lfSwitch
                         ,lfWidgets
                         ,lfExternalCommand
+                        ,lfFetcherActor
                         ,triggerEvt
 
                         ,SwitchTo(SwitchTo)
@@ -79,6 +80,8 @@ module LambdaFeed.Types (Channel(Channel)
 
                         ,GuiEvent(..)
                         ,RetrievalError(..)
+                        ,FetcherControl(..)
+                        ,FetcherEvent(..)
                         ) where
 
 import           Control.Applicative
@@ -107,6 +110,8 @@ import qualified Data.Text.Encoding as T
 import           Data.Time
 import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, Edit)
 import           Network.HTTP.Client (HttpException)
+
+import LambdaFeed.Actor
 
 data RetrievalError = RetrievalHttpError Text HttpException
                     | TimeOutDuringRetrieve Text Int
@@ -195,18 +200,27 @@ data GuiEvent = ChannelActivated Channel
               | FetchAll
               | ExternalCommandOnItem FeedItem
               | SwitchToLogging
-              | FetchComplete (Either RetrievalError (Text, (Seq FeedItem)))
               | CancelUpdate
               | EditUrls
               | AcceptUrlEditing
               | AbortUrlEditing
               deriving Show
 
+data FetcherControl = StartFetch [Text] deriving Show
+
+data FetcherEvent = StartedSingleFetch UTCTime Text
+                  | CompletedSingleFetch UTCTime Text (Seq FeedItem)
+                  | ErrorDuringFetch Text RetrievalError
+                  | FetchFinished UTCTime
+                  deriving Show
+
+
 data LFCfg = LFCfg { _lfAcid :: AcidState Database
                    , _lfSwitch :: SwitchTo
                    , _lfWidgets :: LFWidgets
                    , _lfExternalCommand :: (String, [String])
                    , _triggerEvt :: GuiEvent -> IO ()
+                   , _lfFetcherActor :: Actor FetcherControl FetcherEvent
                    }
 makeLenses ''LFCfg
 

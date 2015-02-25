@@ -1,9 +1,9 @@
 {-# LANGUAGE TupleSections #-}
-module LambdaFeed.Retrieval (fetchP) where
+module LambdaFeed.Retrieval (fetchActor) where
 
 import           Control.Exception.Base (try)
 import           Control.Lens (view, from, strict)
-import           Data.Functor ((<$>))
+import           Control.Monad (forever)
 import           Data.Sequence (Seq)
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -13,12 +13,12 @@ import           Data.Time (getCurrentTime)
 import           Network.HTTP.Client (HttpException)
 import qualified Network.Wreq as Wreq
 import           Pipes
-import qualified Pipes.Prelude as P
+import           System.Timeout (timeout)
 import           Text.Feed.Import (parseFeedString)
 
+import           LambdaFeed.Actor
 import           LambdaFeed.Conversion (convertFeedToFeedItems)
-import           LambdaFeed.Types (FeedItem,RetrievalError(..))
-import           System.Timeout (timeout)
+import           LambdaFeed.Types
 
 tryHttp :: IO a -> IO (Either HttpException a)
 tryHttp = try
@@ -38,8 +38,19 @@ fetch1 dt url = do
             return . Right $ convertFeedToFeedItems currTime f
   where parse = parseFeedString . view (Wreq.responseBody . utf8 . from packed)
 
-fetchP :: (Monad m, MonadIO m, Foldable f)
-       => Int
-       -> f Text
-       -> Producer (Either RetrievalError (Text,(Seq FeedItem))) m ()
-fetchP dt ts = each ts >-> P.mapM (\u -> fmap (u,) <$> liftIO (fetch1 dt u))
+fetchActor :: Int -> IO (Actor FetcherControl FetcherEvent)
+fetchActor dt = newActor $ forever $ do
+  evt <- await
+  case evt of
+    StartFetch us -> do
+      for (each us) $ \u -> (do
+        startTime <- liftIO getCurrentTime
+        yield (StartedSingleFetch startTime u)
+        r <- liftIO $ fetch1 dt u
+        case r of
+          Left e -> yield (ErrorDuringFetch u e)
+          Right items -> do
+            now <- liftIO getCurrentTime
+            yield (CompletedSingleFetch now u items))
+      endTime <- liftIO getCurrentTime
+      yield (FetchFinished endTime)

@@ -6,7 +6,6 @@ module LambdaFeed (start) where
 
 import           Control.Applicative
 import           Control.Concurrent (forkIO)
-import           Control.Concurrent.Async (poll,Async, async, cancel)
 import           Control.Concurrent.STM (STM)
 import           Control.Exception.Extra (retry, try_)
 import           Control.Lens (view, non, use, Lens')
@@ -33,15 +32,14 @@ import           Graphics.Vty (Attr)
 import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, setText, insertIntoList, appendText, setEditText, getEditText)
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
 import           Pipes
-import           Pipes.Concurrent (fromInput, atomically, Input)
-import qualified Pipes.Prelude as P
+import           Pipes.Concurrent (fromInput, atomically, Input, send)
 import           System.Exit (exitSuccess)
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process (readProcess, rawSystem)
 
+import           LambdaFeed.Actor
 import           LambdaFeed.Types
 import           LambdaFeed.Widgets
-import           LambdaFeed.Retrieval (fetchP)
 
 queryAcid :: (QueryEvent e, MethodState e ~ Database) => e -> LF (MethodResult e)
 queryAcid x = do
@@ -125,61 +123,43 @@ display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
             ,(view renderedContent r, myDefAttr)
             ]
 
-start :: STM () -> Input GuiEvent -> LFCfg -> LFState -> IO ()
-start seal input cfg s =
-  void . forkIO $ runLF cfg s . runEffect $ fromInput input >-> guiEventHandler seal
-
-cancelUpdate :: LF ()
-cancelUpdate = do
-  asyn <- use lfUpdateAsync
-  case asyn of
-    Nothing -> logIt' "No update running"
-    Just a -> do
-      liftIO $ cancel a
-      statusSet "Update cancelled"
-      logIt' "Update cancelled"
+start :: STM () -> Input FetcherEvent -> Input GuiEvent -> LFCfg -> LFState -> IO ()
+start seal fetcherEvents guiEvents cfg s = do
+  let inputs = ((Left <$> fetcherEvents) <> (Right <$> guiEvents))
+  void . forkIO $ runLF cfg s . runEffect $ fromInput inputs >-> (forever $ do
+    event <- await
+    case event of
+      Left fetcherEvent -> lift (handleFetcherEvent fetcherEvent)
+      Right guiEvent -> lift (handleGUIEvent seal guiEvent))
 
 fetchAllFeeds :: LF ()
 fetchAllFeeds = do
-  isDone <- isUpdateFinished
-  if isDone
-    then do
-      logIt' "Started update"
-      newAsync <- forkUpdate
-      lfUpdateAsync ?= newAsync
-    else logIt' "Already updating"
-
-isUpdateFinished :: LF Bool
-isUpdateFinished = do
-  currentAsync <- use lfUpdateAsync
-  case currentAsync of
-    Nothing -> return True
-    Just asyn -> do
-      status <- liftIO $ poll asyn
-      case status of
-        Nothing -> return False
-        Just _ -> return True
-
-forkUpdate :: LF (Async ())
-forkUpdate = do
-  feedsToFetch <- queryAcid GetTrackedUrls
-  trigger <- view triggerEvt
-  statusLog <- getStatusLogCommand
-  liftIO . async $ do
-    statusLog "Fetching..."
-    runEffect $ fetchP (20 * 1000 * 1000) feedsToFetch
-            >-> P.mapM (trigger . FetchComplete)
-            >-> P.drain
-    msg <- liftIO $ (<>) <$> timestamp <*> pure " Fetching complete."
-    statusLog msg
+  fetcher <- view lfFetcherActor
+  us <- queryAcid GetTrackedUrls
+  void . liftIO . atomically . send (fetcher ^. actorInbox) $ (StartFetch us)
 
 resetHeader :: LF ()
 resetHeader = do
   w <- view (lfWidgets.headerWidget)
   liftIO $ setText w "λ Feed"
 
-guiEventHandler :: STM () -> Consumer GuiEvent LF ()
-guiEventHandler seal = forever $ await >>= lift . handle
+handleFetcherEvent :: FetcherEvent -> LF ()
+handleFetcherEvent (StartedSingleFetch _ url) = do
+  statusSet ("Fetching: " <> url)
+  logIt' ("Started fetching " <> url)
+handleFetcherEvent (CompletedSingleFetch _ url items) = do
+  when (not (Seq.null items)) $ do
+    updateAcid (UpdateFeeds items)
+    updateChannelWidget
+  logIt' ("Fetched " <> (T.pack (show (length items))) <> " items from: " <> url )
+handleFetcherEvent (FetchFinished _) = do
+  statusSet "Fetch complete."
+  logIt' "Fetching finished"
+handleFetcherEvent (ErrorDuringFetch url err) = do
+  logIt ("Failed to fetch " <> url) (T.pack $ show err)
+
+handleGUIEvent :: STM () -> GuiEvent -> LF ()
+handleGUIEvent seal e = handle e
   where handle :: GuiEvent -> LF ()
         handle FetchAll = fetchAllFeeds
         handle ShowChannels = showChannels
@@ -212,20 +192,7 @@ guiEventHandler seal = forever $ await >>= lift . handle
            for_ currentChannel $ \curr -> showItemsFor curr
         handle (ExternalCommandOnItem item) = executeExternal item
         handle SwitchToLogging = switchUsing switchToLogging
-        handle (FetchComplete (Right (url,items))) = do
-          acid <- view lfAcid
-          logIt' $ "Fetched " <> (T.pack . show . length $ items) <> " items from " <> url
-          when (not (Seq.null items)) $ do
-            update' acid (UpdateFeeds items)
-            updateChannelWidget
-          statusSet ("Fetched: " <> url)
-        handle (FetchComplete (Left (RetrievalHttpError u e))) =
-          logIt ("Failed: " <> u) (T.pack . show $ e)
-        handle (FetchComplete (Left (FeedParseError u s))) =
-          logIt ("Parse failed: " <> u) s
-        handle (FetchComplete (Left (TimeOutDuringRetrieve u i))) =
-          logIt' ("Timed out with a limit of " <> (T.pack . show $ i) <> " μs : " <> u)
-        handle CancelUpdate = cancelUpdate
+        handle CancelUpdate = error "TODO: how to stop fetcher?"
         handle EditUrls = do
           prepareEditUrls
           switchUsing switchToEditUrl
@@ -317,12 +284,6 @@ getStatusLogCommand = do
   widget <- view (lfWidgets . statusBarWidget)
   return $ \status -> liftIO . schedule $ do
     setText widget status
-
-timestamp :: IO Text
-timestamp = do
-  t <- utcToLocalTime <$> getCurrentTimeZone <*> getCurrentTime
-  let currTime = sformat hms t
-  return currTime
 
 statusSet :: Text -> LF ()
 statusSet t = do
