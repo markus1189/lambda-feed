@@ -8,10 +8,9 @@ module LambdaFeed.Actor (Actor
                         ,newActor'
 
                         ,killActor
-                        ,link
                         ) where
 
-import Control.Concurrent.Async (async,Async,cancel,link2)
+import Control.Concurrent.Async (async,Async,cancel)
 import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad.State
@@ -39,6 +38,3 @@ newActor' p r = do
 
 killActor :: Actor a b -> IO ()
 killActor actor = atomically (actor ^. actorSeal) >> cancel (actor ^. actorAsync)
-
-link :: Actor a b -> Actor c d -> IO ()
-link (Actor _ _ r1 _) (Actor _ _ r2 _) = link2 r1 r2
