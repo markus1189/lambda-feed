@@ -1,15 +1,18 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 module Main (main) where
 
+#if __GLASGOW_HASKELL__ < 710
+import           Control.Applicative (pure)
+#endif
 import           Control.Exception (bracket)
 import           Control.Lens.Operators
 import           Control.Monad.Reader
@@ -28,7 +31,6 @@ import           LambdaFeed.Actor
 import           LambdaFeed.Retrieval
 import           LambdaFeed.Types
 import           LambdaFeed.Widgets
-
 
 wrap :: (Show a, Show b, Show c)
      => Widget a

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -24,7 +25,12 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Text.Lens (_Text)
 import           Data.Time (UTCTime, utcToLocalTime)
-import           Data.Time (formatTime, defaultTimeLocale, rfc822DateFormat)
+#if __GLASGOW_HASKELL__ >= 710
+import           Data.Time (defaultTimeLocale, rfc822DateFormat)
+#else
+import           System.Locale (defaultTimeLocale, rfc822DateFormat)
+#endif
+import           Data.Time (formatTime)
 import           Data.Time (getCurrentTime, getCurrentTimeZone)
 import           Formatting (sformat, left, (%), (%.), stext, int)
 import           Formatting.Time (monthNameShort, dayOfMonth, hms)
@@ -151,7 +157,7 @@ handleFetcherEvent (CompletedSingleFetch _ url items) = do
   when (not (Seq.null items)) $ do
     updateAcid (UpdateFeeds items)
     updateChannelWidget
-  logIt' ("Fetched " <> (T.pack (show (length items))) <> " items from: " <> url )
+  logIt' ("Fetched " <> (T.pack (show (Seq.length items))) <> " items from: " <> url )
 handleFetcherEvent (FetchFinished _) = do
   statusSet "Fetch complete."
   logIt' "Fetching finished"
