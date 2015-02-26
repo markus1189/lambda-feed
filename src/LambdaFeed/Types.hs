@@ -7,6 +7,7 @@
 module LambdaFeed.Types (Channel(Channel)
                         ,channelTitle
                         ,channelUrl
+                        ,channelFetchUrl
 
                         ,FeedItem(FeedItem)
                         ,itemTitle
@@ -119,6 +120,7 @@ data RetrievalError = RetrievalHttpError Text HttpException
                     deriving (Show)
 data Channel = Channel { _channelTitle :: Text
                        , _channelUrl :: Maybe Text
+                       , _channelFetchUrl :: Text
                        } deriving (Show, Eq, Ord, Data, Typeable)
 makeLenses ''Channel
 $(deriveSafeCopy 0 'base ''Channel)

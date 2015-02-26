@@ -19,18 +19,18 @@ import           Text.Feed.Types as Ext
 
 import           LambdaFeed.Types
 
-convertFeedToFeedItems :: UTCTime -> Ext.Feed -> Seq FeedItem
-convertFeedToFeedItems now extFeed = convertFeedItem now extFeed
-                                 <$> Seq.fromList (getFeedItems extFeed)
+convertFeedToFeedItems :: Text -> UTCTime -> Ext.Feed -> Seq FeedItem
+convertFeedToFeedItems src now extFeed = convertFeedItem src now extFeed
+                                     <$> Seq.fromList (getFeedItems extFeed)
 
-convertFeedItem :: UTCTime -> Ext.Feed -> Item -> FeedItem
-convertFeedItem now srcFeed i = FeedItem title url curl content pubDateOrNow chan guid
+convertFeedItem :: Text -> UTCTime -> Ext.Feed -> Item -> FeedItem
+convertFeedItem src now srcFeed i = FeedItem title url curl content pubDateOrNow chan guid
   where title = T.pack <$> (getItemTitle i)
         url = T.pack <$> getItemLink i
         curl = T.pack <$> getItemCommentLink i
         content = getFeedContent i
         guid = (review _IdFromFeed . snd) <$> getItemId i <|> sha
-        chan = Channel (T.pack (getFeedTitle srcFeed)) (T.pack <$> (getFeedHome srcFeed))
+        chan = Channel (T.pack (getFeedTitle srcFeed)) (T.pack <$> (getFeedHome srcFeed)) src
         pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
         sha = review (below _IdFromContentSHA) $ showDigest . sha1 . view lazy . T.encodeUtf8 <$> (content <> title)
 

@@ -36,7 +36,7 @@ fetch1 dt url = do
                        FeedParseError url (T.decodeUtf8 . view (Wreq.responseBody . strict) $ resp)
           Just f -> do
             currTime <- getCurrentTime
-            return . Right $ convertFeedToFeedItems currTime f
+            return . Right $ convertFeedToFeedItems url currTime f
   where parse = parseFeedString . view (Wreq.responseBody . utf8 . from packed)
 
 fetchActor :: Int -> IO (Actor FetcherControl FetcherEvent)
