@@ -176,4 +176,5 @@ main = bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
   (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid fetcher
   start seal (fetcher ^. actorOutbox) input cfg s
   void . atomically $ send output BackToChannels
+  void . atomically $ send output FetchAll
   runUi c defaultContext
