@@ -3,7 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-module LambdaFeed (start) where
+module LambdaFeed (lambdaFeed) where
 
 import           Control.Applicative
 import           Control.Concurrent (forkIO,threadDelay)
@@ -24,8 +24,10 @@ import           Data.Ord (comparing)
 import qualified Data.Sequence as Seq
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import           Data.Text.Lens (_Text)
 import           Data.Time (UTCTime, utcToLocalTime)
+import           System.Directory (doesFileExist)
 #if __GLASGOW_HASKELL__ >= 710
 import           Data.Time (defaultTimeLocale, rfc822DateFormat)
 #else
@@ -130,8 +132,10 @@ display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
             ,(view renderedContent r, myDefAttr)
             ]
 
-start :: STM () -> Input FetcherEvent -> Input GuiEvent -> LFCfg -> LFState -> IO ()
-start seal fetcherEvents guiEvents cfg s = do
+lambdaFeed :: STM () -> Input FetcherEvent -> Input GuiEvent -> LFCfg -> LFState -> IO ()
+lambdaFeed seal fetcherEvents guiEvents cfg s = do
+  exists <- doesFileExist (cfg ^. lfUrlsFile)
+  when (not exists) $ TIO.writeFile (cfg ^. lfUrlsFile) ""
   let inputs = ((Left <$> fetcherEvents) <> (Right <$> guiEvents))
   void . forkIO $ runLF cfg s . runEffect $ fromInput inputs >-> (forever $ do
     event <- await
@@ -139,10 +143,15 @@ start seal fetcherEvents guiEvents cfg s = do
       Left fetcherEvent -> lift (handleFetcherEvent fetcherEvent)
       Right guiEvent -> lift (handleGUIEvent seal guiEvent))
 
+readUrlsFromFile :: LF [Text]
+readUrlsFromFile = do
+  path <- view lfUrlsFile
+  liftIO $ T.lines <$> TIO.readFile path
+
 fetchAllFeeds :: LF ()
 fetchAllFeeds = do
   fetcher <- view lfFetcherActor
-  us <- queryAcid GetTrackedUrls
+  us <- readUrlsFromFile
   void . liftIO . atomically . send (fetcher ^. actorInbox) $ (StartFetch us)
 
 resetHeader :: LF ()
@@ -207,14 +216,15 @@ handleGUIEvent seal e = handle e
         handle AbortUrlEditing = switchUsing switchToChannels
         handle AcceptUrlEditing = do
           w <- view (lfWidgets.editUrlWidget)
-          newUrls <- liftIO $ T.lines <$> getEditText w
-          updateAcid (SetTrackedUrls newUrls)
+          newUrls <- liftIO $ getEditText w
+          file <- view lfUrlsFile
+          liftIO $ TIO.writeFile file newUrls
           switchUsing switchToChannels
 
 prepareEditUrls :: LF ()
 prepareEditUrls = do
   w <- view (lfWidgets.editUrlWidget)
-  us <- queryAcid (GetTrackedUrls)
+  us <- readUrlsFromFile
   liftIO $ setEditText w (T.intercalate "\n" us)
 
 markChannelRead :: LF ()
@@ -250,7 +260,7 @@ updateChannelWidget = do
   widget <- view (lfWidgets . channelWidget)
   acid <- view lfAcid
   vis <- use lfVisibility
-  urls <- queryAcid GetTrackedUrls
+  urls <- readUrlsFromFile
   (unreadItems,readItems) <- queryAcid AllItems
   visibleChannels <- sortAsGiven urls <$> query' acid (GetChannels vis)
   liftIO . saveSelection widget . schedule $ do
@@ -266,9 +276,9 @@ updateChannelWidget = do
 
 sortAsGiven :: Foldable f => [Text] -> f Channel -> [Channel]
 sortAsGiven urls cs = sortBy (comparing indexAsGiven) (toList cs)
-  where indexAsGiven chan = do
-          cUrl <- view channelUrl chan
-          findIndex ((||) <$> (cUrl `T.isInfixOf`) <*> (`T.isInfixOf` cUrl)) urls
+  where indexAsGiven chan = findIndex (fetchUrl `T.isInfixOf`) urls
+          where fetchUrl = view channelFetchUrl chan
+
 
 logIt :: Text -> Text -> LF ()
 logIt subject body = do

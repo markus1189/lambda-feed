@@ -155,7 +155,7 @@ setupGui trigger acid fetcher = do
       (KEsc, []) -> trigger AbortUrlEditing
       _ -> return False
 
-  let cfg = LFCfg acid switches widgets ("bullet-push", ["link"]) (void . trigger) fetcher
+  let cfg = LFCfg acid switches widgets ("bullet-push", ["link"]) (void . trigger) fetcher "lambda-feed-urls"
       switches = SwitchTo channelView itemView contentView loggingView editUrlView
       widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar header editUrlWidget'
       s = initialLFState
@@ -174,7 +174,7 @@ main = bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
   fetcher <- fetchActor (30 * 1000 * 1000)
   (output,input,seal) <- spawn' (bounded 10)
   (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid fetcher
-  start seal (fetcher ^. actorOutbox) input cfg s
+  lambdaFeed seal (fetcher ^. actorOutbox) input cfg s
   void . atomically $ send output BackToChannels
   void . atomically $ send output FetchAll
   runUi c defaultContext

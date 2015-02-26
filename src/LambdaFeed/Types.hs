@@ -43,8 +43,6 @@ module LambdaFeed.Types (Channel(Channel)
                         ,GetChannels(..)
                         ,UpdateFeeds(..)
                         ,MarkAsRead(..)
-                        ,GetTrackedUrls(..)
-                        ,SetTrackedUrls(..)
 
                         ,LF
                         ,runLF
@@ -55,6 +53,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,lfWidgets
                         ,lfExternalCommand
                         ,lfFetcherActor
+                        ,lfUrlsFile
                         ,triggerEvt
 
                         ,SwitchTo(SwitchTo)
@@ -123,7 +122,7 @@ data Channel = Channel { _channelTitle :: Text
                        , _channelFetchUrl :: Text
                        } deriving (Show, Eq, Ord, Data, Typeable)
 makeLenses ''Channel
-$(deriveSafeCopy 0 'base ''Channel)
+$(deriveSafeCopy 1 'base ''Channel)
 
 data ItemId = IdFromFeed String | IdFromContentSHA String
   deriving (Show,Eq,Ord,Data,Typeable)
@@ -154,7 +153,6 @@ makeLenses ''RenderedItem
 data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
                          , _readFeeds :: Map Channel (Seq FeedItem)
                          , _seenItems :: Set ItemId
-                         , _trackedUrls :: [Text]
                          } deriving (Data,Typeable)
 $(deriveSafeCopy 2 'base ''Database)
 makeLenses ''Database
@@ -222,6 +220,7 @@ data LFCfg = LFCfg { _lfAcid :: AcidState Database
                    , _lfExternalCommand :: (String, [String])
                    , _triggerEvt :: GuiEvent -> IO ()
                    , _lfFetcherActor :: Actor FetcherControl FetcherEvent
+                   , _lfUrlsFile :: FilePath
                    }
 makeLenses ''LFCfg
 
@@ -249,12 +248,6 @@ getItems ReadAndUnread c = do
   unreadItems <- view (unreadFeeds . at c . non Seq.empty)
   readItems <- view (readFeeds . at c . non Seq.empty)
   return . reverseDateSort $ readItems >< unreadItems
-
-getTrackedUrls :: Query Database [Text]
-getTrackedUrls = view trackedUrls
-
-setTrackedUrls :: [Text] -> Update Database ()
-setTrackedUrls us = trackedUrls .= us
 
 allItems :: Query Database (Map Channel (Seq FeedItem), Map Channel (Seq FeedItem))
 allItems = (,) <$> view unreadFeeds <*> view readFeeds
@@ -299,7 +292,7 @@ guidOrSHA i = view itemId i <|> (review _IdFromContentSHA . showDigest) <$> sha
         maybeItemContent = view itemContent i
         maybeChannelTitle = view (itemChannel . channelUrl) i
 
-$(makeAcidic ''Database ['getItems, 'allItems, 'updateFeeds, 'markAsRead, 'getChannels, 'getTrackedUrls, 'setTrackedUrls])
+$(makeAcidic ''Database ['getItems, 'allItems, 'updateFeeds, 'markAsRead, 'getChannels])
 
 initialDb :: Database
-initialDb = Database Map.empty Map.empty Set.empty []
+initialDb = Database Map.empty Map.empty Set.empty
