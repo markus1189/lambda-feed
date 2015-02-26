@@ -8,12 +8,15 @@ module LambdaFeed.Actor (Actor
                         ,newActor'
 
                         ,killActor
+                        ,isAlive
                         ) where
 
-import Control.Concurrent.Async (async,Async,cancel)
+import Control.Concurrent.Async (Async,async,cancel,poll)
 import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad.State
+import Data.Functor ((<$>))
+import Data.Maybe (isNothing)
 import Pipes
 import Pipes.Concurrent
 
@@ -25,21 +28,24 @@ data Actor a b = Actor {_actorInbox :: Output a
 makeLenses ''Actor
 
 newActor :: Buffer a -> Buffer b -> Pipe a b IO () -> IO (Actor a b)
-newActor ba bb p = newActor' ba bb p id
+newActor = newActor' id
 
 newActor' :: MonadIO m
-          => Buffer a
+          => (m () -> IO ())
+          -> Buffer a
           -> Buffer b
           -> Pipe a b m ()
-          -> (m () -> IO ())
           -> IO (Actor a b)
-newActor' ba bb p r = do
+newActor' runStack ba bb p = do
   (inboxOutput,inboxInput,seal1) <- spawn' ba
   (outboxOutput,outboxInput,seal2) <- spawn' bb
-  ref <- async . r . runEffect $ fromInput inboxInput
-                             >-> p
-                             >-> toOutput outboxOutput
+  ref <- async . runStack . runEffect $ fromInput inboxInput
+                                    >-> p
+                                    >-> toOutput outboxOutput
   return $ Actor inboxOutput outboxInput ref (seal1 >> seal2)
 
 killActor :: Actor a b -> IO ()
 killActor actor = atomically (actor ^. actorSeal) >> cancel (actor ^. actorAsync)
+
+isAlive :: Actor a b -> IO Bool
+isAlive (Actor _ _ t _) = isNothing <$> poll t
