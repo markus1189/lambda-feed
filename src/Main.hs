@@ -150,6 +150,10 @@ setupGui trigger acid fetcher = do
   itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
     void $ trigger (ItemActivated item)
 
+  loggingList `onItemAdded` \_ -> do
+    size <- getListSize loggingList
+    when (size >= 50) $ void $ removeFromList loggingList 0
+
   editUrlWidget' `onKeyPressed` \_ k modifier -> do
     let run f = applyEdit f editUrlWidget' >> return True
     case (k,modifier) of

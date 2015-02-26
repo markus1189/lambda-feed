@@ -38,7 +38,7 @@ import           Data.Time (getCurrentTime, getCurrentTimeZone)
 import           Formatting (sformat, left, (%), (%.), stext, int)
 import           Formatting.Time (monthNameShort, dayOfMonth, hms)
 import           Graphics.Vty (Attr)
-import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, setText, insertIntoList, appendText, setEditText, getEditText)
+import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, setText, appendText, setEditText, getEditText)
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
 import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input, send)
@@ -310,7 +310,7 @@ ioLog widget subject body = do
   t <- utcToLocalTime <$> getCurrentTimeZone <*> getCurrentTime
   let currTime = sformat hms t
   lbl <- plainText ("[" <> currTime <> "] " <> subject)
-  insertIntoList widget body lbl 0
+  addToList widget body lbl
 
 getLogCommand :: LF (Text -> Text -> IO ())
 getLogCommand = do
