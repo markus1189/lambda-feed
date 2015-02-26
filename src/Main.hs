@@ -109,7 +109,7 @@ setupGui trigger acid fetcher = do
     (KChar 'h',[]) -> trigger BackToChannels
     (KChar 'q',[]) -> trigger BackToChannels
     (KChar 'l',[]) -> trigger ToggleItemVisibility
-    (KChar 'A',[]) -> trigger BackToChannels >> trigger MarkChannelRead
+    (KChar 'A',[]) -> trigger $ Compose MarkCurrentChannelRead BackToChannels
     _ -> return False
 
   fgChannel `onKeyPressed` \_ k ms -> case (k,ms) of
@@ -132,6 +132,14 @@ setupGui trigger acid fetcher = do
 
   channelList `onItemActivated` \(ActivateItemEvent _ chan _) -> do
     void $ trigger (ChannelActivated chan)
+
+  channelList `onKeyPressed` \this k ms -> case (k,ms) of
+    (KChar 'A',[]) -> do
+      maybeSel <- getSelected this
+      case maybeSel of
+        Nothing -> return True
+        Just (_,(chan,_)) -> trigger (MarkChannelRead chan)
+    _ -> return False
 
   itemList `onKeyPressed` \_ k ms -> case (k,ms) of
     (KChar 'i',[]) -> do

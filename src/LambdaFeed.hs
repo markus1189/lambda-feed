@@ -185,6 +185,7 @@ handleFetcherEvent (ErrorDuringFetch url err) = do
 handleGUIEvent :: STM () -> GuiEvent -> LF ()
 handleGUIEvent seal e = handle e
   where handle :: GuiEvent -> LF ()
+        handle (Compose e1 e2) = handle e1 >> handle e2
         handle FetchAll = fetchAllFeeds
         handle ShowChannels = showChannels
         handle (ChannelActivated chan) = do
@@ -198,7 +199,8 @@ handleGUIEvent seal e = handle e
           updateChannelWidget
           showChannels
         handle BackToItems = switchUsing switchToItems
-        handle MarkChannelRead = markChannelRead
+        handle MarkCurrentChannelRead = markCurrentChannelRead
+        handle (MarkChannelRead chan) = markChannelRead chan
         handle ToggleChannelVisibility = do
           vis <- use lfVisibility
           lfVisibility .= case vis of
@@ -233,13 +235,15 @@ prepareEditUrls = do
   us <- readUrlsFromFile
   liftIO $ setEditText w (T.intercalate "\n" us)
 
-markChannelRead :: LF ()
-markChannelRead = do
+markChannelRead :: Channel -> LF ()
+markChannelRead chan = do
+  updateAcid (MarkAsRead chan)
+  updateChannelWidget
+
+markCurrentChannelRead :: LF ()
+markCurrentChannelRead = do
   currentChannel <- use lfCurrentChannel
-  acid <- view lfAcid
-  for_ currentChannel $ \chan -> do
-    update' acid (MarkAsRead chan)
-    updateChannelWidget
+  for_ currentChannel markChannelRead
 
 executeExternal :: FeedItem -> LF ()
 executeExternal item = do
@@ -272,11 +276,10 @@ executeExternal item = do
 updateChannelWidget :: LF ()
 updateChannelWidget = do
   widget <- view (lfWidgets . channelWidget)
-  acid <- view lfAcid
   vis <- use lfVisibility
   urls <- readUrlsFromFile
   (unreadItems,readItems) <- queryAcid AllItems
-  visibleChannels <- sortAsGiven urls <$> query' acid (GetChannels vis)
+  visibleChannels <- sortAsGiven urls <$> queryAcid (GetChannels vis)
   liftIO . saveSelection widget . schedule $ do
     clearList widget
     for_ visibleChannels $ \chan -> do

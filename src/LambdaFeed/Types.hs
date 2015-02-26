@@ -194,7 +194,8 @@ data GuiEvent = ChannelActivated Channel
               | QuitLambdaFeed
               | BackToChannels
               | BackToItems
-              | MarkChannelRead
+              | MarkCurrentChannelRead
+              | MarkChannelRead Channel
               | ToggleChannelVisibility
               | ToggleItemVisibility
               | FetchAll
@@ -203,6 +204,7 @@ data GuiEvent = ChannelActivated Channel
               | EditUrls
               | AcceptUrlEditing
               | AbortUrlEditing
+              | Compose GuiEvent GuiEvent
               deriving Show
 
 data FetcherControl = StartFetch [Text] deriving Show
