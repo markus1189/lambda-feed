@@ -42,7 +42,7 @@ import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearLis
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
 import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input, send)
-import           System.Exit (exitSuccess)
+import           System.Exit (exitSuccess, ExitCode(..))
 import           System.IO.Unsafe (unsafePerformIO)
 import           System.Process (readProcess, rawSystem)
 
@@ -259,7 +259,10 @@ executeExternal item = do
         Left e -> do
           statusLogCmd "External command failed (see log)."
           logCmd "Command failed" (T.pack . show $ e)
-        Right _ -> return ()
+        Right ExitSuccess -> return ()
+        Right (ExitFailure exitCode) -> do
+          statusLogCmd "External command failed (see log)."
+          logCmd "Command failed with exit code: " (T.pack . show $ exitCode)
 
 updateChannelWidget :: LF ()
 updateChannelWidget = do
