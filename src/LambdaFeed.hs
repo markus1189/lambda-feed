@@ -44,7 +44,7 @@ import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input, send)
 import           System.Exit (exitSuccess, ExitCode(..))
 import           System.IO.Unsafe (unsafePerformIO)
-import           System.Process (readProcess, rawSystem)
+import           System.Process (readProcess, runInteractiveProcess, waitForProcess)
 
 import           LambdaFeed.Actor
 import           LambdaFeed.Types
@@ -253,8 +253,13 @@ executeExternal item = do
           <> " <" <> title <> ">"
           <> " <" <> url <> ">"
     liftIO . forkIO $ do
-      res <- try_ . retry 3 $
-               rawSystem command $ args ++ [(T.unpack title), (T.unpack url)]
+      res <- try_ . retry 3 $ do
+               (_,_,_,p) <- runInteractiveProcess
+                              command
+                              (args ++ [(T.unpack title), (T.unpack url)])
+                              Nothing
+                              Nothing
+               waitForProcess p
       case res of
         Left e -> do
           statusLogCmd "External command failed (see log)."
