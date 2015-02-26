@@ -105,36 +105,36 @@ setupGui trigger acid fetcher = do
   loggingView <- addToCollection c loggingUI fgLogging
   editUrlView <- addToCollection c urlEditUI fgUrlEdit
 
-  fgItems `onKeyPressed` \_ k _ -> case k of
-    (KChar 'h') -> trigger BackToChannels
-    (KChar 'q') -> trigger BackToChannels
-    (KChar 'l') -> trigger ToggleItemVisibility
-    (KChar 'A') -> trigger BackToChannels >> trigger MarkChannelRead
+  fgItems `onKeyPressed` \_ k ms -> case (k,ms) of
+    (KChar 'h',[]) -> trigger BackToChannels
+    (KChar 'q',[]) -> trigger BackToChannels
+    (KChar 'l',[]) -> trigger ToggleItemVisibility
+    (KChar 'A',[]) -> trigger BackToChannels >> trigger MarkChannelRead
     _ -> return False
 
-  fgChannel `onKeyPressed` \_ k _ -> case k of
-    (KChar 'Q') -> trigger QuitLambdaFeed
-    (KChar 'l') -> trigger ToggleChannelVisibility
-    (KChar 'u') -> trigger FetchAll
-    (KChar 'E') -> trigger EditUrls
-    (KChar 'L') -> trigger SwitchToLogging
+  fgChannel `onKeyPressed` \_ k ms -> case (k,ms) of
+    (KChar 'Q',[]) -> trigger QuitLambdaFeed
+    (KChar 'l',[]) -> trigger ToggleChannelVisibility
+    (KChar 'u',[]) -> trigger FetchAll
+    (KChar 'E',[]) -> trigger EditUrls
+    (KChar 'L',[]) -> trigger SwitchToLogging
     _ -> return False
 
-  fgContent `onKeyPressed` \_ k _ -> case k of
-    (KChar 'h') -> trigger BackToItems
-    (KChar 'q') -> trigger BackToItems
+  fgContent `onKeyPressed` \_ k ms -> case (k,ms) of
+    (KChar 'h',[]) -> trigger BackToItems
+    (KChar 'q',[]) -> trigger BackToItems
     _ -> return False
 
-  fgLogging `onKeyPressed` \_ k _ -> case k of
-    (KChar 'h') -> trigger BackToChannels
-    (KChar 'q') -> trigger BackToChannels
+  fgLogging `onKeyPressed` \_ k ms -> case (k,ms) of
+    (KChar 'h',[]) -> trigger BackToChannels
+    (KChar 'q',[]) -> trigger BackToChannels
     _ -> return False
 
   channelList `onItemActivated` \(ActivateItemEvent _ chan _) -> do
     void $ trigger (ChannelActivated chan)
 
-  itemList `onKeyPressed` \_ k _ -> case k of
-    (KChar 'i') -> do
+  itemList `onKeyPressed` \_ k ms -> case (k,ms) of
+    (KChar 'i',[]) -> do
       maybeSel <- getSelected itemList
       maybe (return False) (\(_,(item,_)) -> trigger (ExternalCommandOnItem item)) maybeSel
     _ -> return False
@@ -161,12 +161,12 @@ setupGui trigger acid fetcher = do
       s = initialLFState
   return (cfg,s,c)
 
-viKeys :: Widget (List a b) -> Key -> t -> IO Bool
+viKeys :: Widget (List a b) -> Key -> [Modifier] -> IO Bool
 viKeys = handler
-  where handler w (KChar 'j') _ = scrollDown w >> return True
-        handler w (KChar 'k') _ = scrollUp w >> return True
-        handler w (KChar 'g') _ = scrollToBeginning w >> return True
-        handler w (KChar 'G') _ = scrollToEnd w >> return True
+  where handler w (KChar 'j') [] = scrollDown w >> return True
+        handler w (KChar 'k') [] = scrollUp w >> return True
+        handler w (KChar 'g') [] = scrollToBeginning w >> return True
+        handler w (KChar 'G') [] = scrollToEnd w >> return True
         handler _ _ _ = return False
 
 main :: IO ()
