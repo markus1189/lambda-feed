@@ -166,9 +166,10 @@ resetHeader = do
   liftIO $ setText w "λ Feed"
 
 handleFetcherEvent :: FetcherEvent -> LF ()
-handleFetcherEvent (StartedSingleFetch _ url) = do
-  statusSet ("Fetching: " <> url)
-  logIt' ("Started fetching " <> url)
+handleFetcherEvent (StartedSingleFetch _ url (cur,total)) = do
+  let msg = sformat ("(" % int % "/" % int % ") Fetching " % stext) cur total url
+  statusSet msg
+  logIt' msg
 handleFetcherEvent (CompletedSingleFetch _ url items) = do
   when (not (Seq.null items)) $ do
     updateAcid (UpdateFeeds items)

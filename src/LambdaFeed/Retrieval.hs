@@ -44,9 +44,10 @@ fetchActor dt = newActor (newest 1) unbounded $ forever $ do
   evt <- await
   case evt of
     StartFetch us -> do
-      for (each us) $ \u -> (do
+      let total = length us
+      for (each (zip [1..] us)) $ \(i,u) -> (do
         startTime <- liftIO getCurrentTime
-        yield (StartedSingleFetch startTime u)
+        yield (StartedSingleFetch startTime u (i,total))
         r <- liftIO $ fetch1 dt u
         case r of
           Left e -> yield (ErrorDuringFetch u e)

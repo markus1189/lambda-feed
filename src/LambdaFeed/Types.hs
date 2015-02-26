@@ -209,7 +209,7 @@ data GuiEvent = ChannelActivated Channel
 
 data FetcherControl = StartFetch [Text] deriving Show
 
-data FetcherEvent = StartedSingleFetch UTCTime Text
+data FetcherEvent = StartedSingleFetch UTCTime Text (Int,Int)
                   | CompletedSingleFetch UTCTime Text (Seq FeedItem)
                   | ErrorDuringFetch Text RetrievalError
                   | FetchFinished UTCTime
