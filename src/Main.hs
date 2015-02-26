@@ -116,7 +116,6 @@ setupGui trigger acid fetcher = do
     (KChar 'Q') -> trigger QuitLambdaFeed
     (KChar 'l') -> trigger ToggleChannelVisibility
     (KChar 'u') -> trigger FetchAll
-    (KChar 'C') -> trigger CancelUpdate
     (KChar 'E') -> trigger EditUrls
     (KChar 'L') -> trigger SwitchToLogging
     _ -> return False

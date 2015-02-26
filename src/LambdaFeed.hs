@@ -198,7 +198,6 @@ handleGUIEvent seal e = handle e
            for_ currentChannel $ \curr -> showItemsFor curr
         handle (ExternalCommandOnItem item) = executeExternal item
         handle SwitchToLogging = switchUsing switchToLogging
-        handle CancelUpdate = error "TODO: how to stop fetcher?"
         handle EditUrls = do
           prepareEditUrls
           switchUsing switchToEditUrl

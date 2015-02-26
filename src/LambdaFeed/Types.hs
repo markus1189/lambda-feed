@@ -200,7 +200,6 @@ data GuiEvent = ChannelActivated Channel
               | FetchAll
               | ExternalCommandOnItem FeedItem
               | SwitchToLogging
-              | CancelUpdate
               | EditUrls
               | AcceptUrlEditing
               | AbortUrlEditing
