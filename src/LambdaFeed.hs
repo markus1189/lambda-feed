@@ -111,7 +111,7 @@ renderItemContent i =
                                                                        ]
         content = view (itemContent . non "Cannot render content.") i
         pandocResult = content & _Text %~ pandocRender
-        feedTitle' = view (itemChannel . channelTitle) $ i
+        feedTitle' = sanitizedTitle $ view itemChannel i
         itemTitle' = view (itemTitle . non "<No title>") i
         itemLink' = stripSlash . view (itemUrl . non "<No link>") $ i
         itemComments' = stripSlash $ view (itemCommentUrl . non "<No comments link>") i
@@ -120,6 +120,12 @@ renderItemContent i =
         formatPubDate :: UTCTime -> Text
         formatPubDate = T.pack . formatTime defaultTimeLocale rfc822DateFormat
         stripSlash = T.dropWhileEnd (=='/')
+
+sanitizedTitle :: Channel -> Text
+sanitizedTitle chan = head $ T.lines $ T.strip $ if T.null ctitle
+                                                   then view channelFetchUrl chan
+                                                   else ctitle
+  where ctitle = view channelTitle chan
 
 display :: RenderedItem -> [(Text,Attr)]
 display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
@@ -183,7 +189,7 @@ handleGUIEvent seal e = handle e
         handle ShowChannels = showChannels
         handle (ChannelActivated chan) = do
           w <- view (lfWidgets . headerWidget)
-          liftIO $ appendText w (" > " <> view channelTitle chan)
+          liftIO $ appendText w (" > " <> sanitizedTitle chan)
           showItemsFor chan
         handle (ItemActivated item) = showContentFor item
         handle QuitLambdaFeed = liftIO $ atomically seal >> shutdownUi >> exitSuccess
@@ -271,7 +277,7 @@ updateChannelWidget = do
           total = numItemsRead + numItemsUnread
           fmtTotal = sformat ("(" % int % "/" % int % ")") numItemsUnread total
       lbl <- liftIO $ plainText $ sformat ((left 11 ' ' %. stext) % " " % stext)
-                                          fmtTotal (view channelTitle chan)
+                                          fmtTotal (sanitizedTitle chan)
       addToList widget chan lbl
 
 sortAsGiven :: Foldable f => [Text] -> f Channel -> [Channel]
