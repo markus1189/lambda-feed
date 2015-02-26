@@ -13,6 +13,7 @@ import           Data.Time (getCurrentTime)
 import           Network.HTTP.Client (HttpException)
 import qualified Network.Wreq as Wreq
 import           Pipes
+import           Pipes.Concurrent
 import           System.Timeout (timeout)
 import           Text.Feed.Import (parseFeedString)
 
@@ -39,7 +40,7 @@ fetch1 dt url = do
   where parse = parseFeedString . view (Wreq.responseBody . utf8 . from packed)
 
 fetchActor :: Int -> IO (Actor FetcherControl FetcherEvent)
-fetchActor dt = newActor $ forever $ do
+fetchActor dt = newActor (newest 1) unbounded $ forever $ do
   evt <- await
   case evt of
     StartFetch us -> do

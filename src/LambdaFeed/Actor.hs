@@ -24,13 +24,18 @@ data Actor a b = Actor {_actorInbox :: Output a
                        }
 makeLenses ''Actor
 
-newActor :: Pipe a b IO () -> IO (Actor a b)
-newActor p = newActor' p id
+newActor :: Buffer a -> Buffer b -> Pipe a b IO () -> IO (Actor a b)
+newActor ba bb p = newActor' ba bb p id
 
-newActor' :: MonadIO m => Pipe a b m () -> (m () -> IO ()) -> IO (Actor a b)
-newActor' p r = do
-  (inboxOutput,inboxInput,seal1) <- spawn' unbounded
-  (outboxOutput,outboxInput,seal2) <- spawn' unbounded
+newActor' :: MonadIO m
+          => Buffer a
+          -> Buffer b
+          -> Pipe a b m ()
+          -> (m () -> IO ())
+          -> IO (Actor a b)
+newActor' ba bb p r = do
+  (inboxOutput,inboxInput,seal1) <- spawn' ba
+  (outboxOutput,outboxInput,seal2) <- spawn' bb
   ref <- async . r . runEffect $ fromInput inboxInput
                              >-> p
                              >-> toOutput outboxOutput
