@@ -6,7 +6,8 @@
 module LambdaFeed (start) where
 
 import           Control.Applicative
-import           Control.Concurrent (forkIO)
+import           Control.Concurrent (forkIO,threadDelay)
+import           Control.Concurrent.Async (async)
 import           Control.Concurrent.STM (STM)
 import           Control.Exception.Extra (retry, try_)
 import           Control.Lens (view, non, use, Lens')
@@ -161,6 +162,8 @@ handleFetcherEvent (CompletedSingleFetch _ url items) = do
 handleFetcherEvent (FetchFinished _) = do
   statusSet "Fetch complete."
   logIt' "Fetching finished"
+  trigger <- view triggerEvt
+  liftIO . void . async $ threadDelay (30 * 60 * 1000 * 1000) >> trigger FetchAll
 handleFetcherEvent (ErrorDuringFetch url err) = do
   logIt ("Failed to fetch " <> url) (T.pack $ show err)
 
