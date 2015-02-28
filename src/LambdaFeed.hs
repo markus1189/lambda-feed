@@ -109,7 +109,7 @@ renderItemContent i =
                                                                        ,"markdown"
                                                                        ,"--reference-links"
                                                                        ]
-        content = view (itemContent . non "Cannot render content.") i
+        content = view (itemContent . non "Cannot render content") i
         pandocResult = content & _Text %~ pandocRender
         feedTitle' = sanitizedTitle $ view itemChannel i
         itemTitle' = view (itemTitle . non "<No title>") i
@@ -176,7 +176,7 @@ handleFetcherEvent (CompletedSingleFetch _ url items) = do
     updateChannelWidget
   logIt' ("Fetched " <> (T.pack (show (Seq.length items))) <> " items from: " <> url )
 handleFetcherEvent (FetchFinished _) = do
-  statusSet "Fetch complete."
+  statusSet "Fetch complete"
   logIt' "Fetching finished"
   trigger <- view triggerEvt
   liftIO . void . async $ threadDelay (30 * 60 * 1000 * 1000) >> trigger FetchAll
@@ -196,7 +196,7 @@ handleGUIEvent seal e = handle e
         handle (ItemActivated item) = showContentFor item
         handle PurgeOldItems = do
           updateAcid PurgeOld
-          statusSet "Purged old items."
+          statusSet "Purged old items"
           updateChannelWidget
         handle QuitLambdaFeed = liftIO $ atomically seal >> shutdownUi >> exitSuccess
         handle BackToChannels = do
@@ -226,12 +226,15 @@ handleGUIEvent seal e = handle e
         handle EditUrls = do
           prepareEditUrls
           switchUsing switchToEditUrl
-        handle AbortUrlEditing = switchUsing switchToChannels
+        handle AbortUrlEditing = do
+          statusSet "Edits discarded"
+          switchUsing switchToChannels
         handle AcceptUrlEditing = do
           w <- view (lfWidgets.editUrlWidget)
           newUrls <- liftIO $ getEditText w
           file <- view lfUrlsFile
           liftIO $ TIO.writeFile file newUrls
+          statusSet "Updated urls"
           switchUsing switchToChannels
 
 prepareEditUrls :: LF ()
@@ -271,11 +274,11 @@ executeExternal item = do
                waitForProcess p
       case res of
         Left e -> do
-          statusLogCmd "External command failed (see log)."
+          statusLogCmd "External command failed (see log)"
           logCmd "Command failed" (T.pack . show $ e)
         Right ExitSuccess -> return ()
         Right (ExitFailure exitCode) -> do
-          statusLogCmd "External command failed (see log)."
+          statusLogCmd "External command failed (see log)"
           logCmd "Command failed with exit code: " (T.pack . show $ exitCode)
 
 updateChannelWidget :: LF ()
