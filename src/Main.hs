@@ -32,17 +32,19 @@ import           LambdaFeed.Retrieval
 import           LambdaFeed.Types
 import           LambdaFeed.Widgets
 
-wrap :: (Show a, Show b, Show c)
+wrap :: (Show a, Show b, Show c, Show d)
      => Widget a
      -> Widget b
      -> Widget c
-     -> IO (Widget (Box (Box (Box a HFill) c) (Box b HFill)))
-wrap header statusBar widget = do
+     -> Widget d
+     -> IO (Widget (Box (Box (Box (Box a HFill) d) (Box c HFill)) (Box b HFill)))
+wrap header statusBar infoBar widget = do
   header' <- pure header <++> hFill ' ' 1
-  statusbar' <- pure statusBar <++> hFill ' ' 1
   setNormalAttribute header' $ Attr KeepCurrent KeepCurrent (SetTo black)
-  setNormalAttribute statusbar' $ Attr KeepCurrent KeepCurrent (SetTo black)
-  pure header' <--> pure widget <--> pure statusbar'
+  statusbar' <- pure statusBar <++> hFill ' ' 1
+  infoBar' <- pure infoBar <++> hFill ' ' 1
+  setNormalAttribute infoBar' $ Attr KeepCurrent KeepCurrent (SetTo black)
+  pure header' <--> pure widget <--> pure infoBar' <--> pure statusbar'
 
 newList' :: Show b => Int -> IO (Widget (List a b))
 newList' i = do l <- newList i
@@ -56,6 +58,7 @@ setupGui :: (GuiEvent -> IO Bool)
          -> IO (LFCfg, LFState, Collection)
 setupGui trigger acid fetcher = do
   header <- plainText "λ Feed"
+  infoBar <- plainText "(j/k:move) (i:bookmark) (l:toggle read) (Enter:activate) (L:Logging) (P:Purge) (E:edit urls) (A:Mark read)"
   statusBar <- plainText ""
 
   loggingList <- newList' 1
@@ -63,7 +66,7 @@ setupGui trigger acid fetcher = do
   loggingDetailView <- textWidget WT.wrap ""
   loggingList `onKeyPressed` viKeys
   loggingCompose <- pure loggingList <--> hBorder <--> vFixed 15 loggingDetailView
-  loggingUI <- centered loggingCompose >>= wrap header statusBar
+  loggingUI <- centered loggingCompose >>= wrap header statusBar infoBar
 
   loggingList `onSelectionChange` \e -> case e of
     SelectionOn _ text _ -> setText loggingDetailView text
@@ -75,26 +78,26 @@ setupGui trigger acid fetcher = do
 
   channelList <- newList' 1
   channelList `onKeyPressed` viKeys
-  channelUI <- centered channelList >>= wrap header statusBar
+  channelUI <- centered channelList >>= wrap header statusBar infoBar
 
   fgChannel <- newFocusGroup
   void $ addToFocusGroup fgChannel channelList
 
   itemList <- newList' 1
   itemList `onKeyPressed` viKeys
-  itemUI <- centered itemList >>= wrap header statusBar
+  itemUI <- centered itemList >>= wrap header statusBar infoBar
 
   fgItems <- newFocusGroup
   void $ addToFocusGroup fgItems itemList
 
   contentWidget' <- newArticleWidget
-  contentUI <- wrap header statusBar contentWidget'
+  contentUI <- wrap header statusBar infoBar contentWidget'
   fgContent <- newFocusGroup
   void $ addToFocusGroup fgContent contentWidget'
 
   editUrlWidget' <- multiLineEditWidget
   setFocusAttribute editUrlWidget' $ white `on` (rgbColor (0::Int) 0 0)
-  urlEditUI <- wrap header statusBar editUrlWidget'
+  urlEditUI <- wrap header statusBar infoBar editUrlWidget'
   fgUrlEdit <- newFocusGroup
   void $ addToFocusGroup fgUrlEdit editUrlWidget'
 
