@@ -43,6 +43,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,GetChannels(..)
                         ,UpdateFeeds(..)
                         ,MarkAsRead(..)
+                        ,PurgeOld(..)
 
                         ,LF
                         ,runLF
@@ -205,6 +206,7 @@ data GuiEvent = ChannelActivated Channel
               | AcceptUrlEditing
               | AbortUrlEditing
               | Compose GuiEvent GuiEvent
+              | PurgeOldItems
               deriving Show
 
 data FetcherControl = StartFetch [Text] deriving Show
@@ -234,6 +236,9 @@ newtype LF a = LF (ReaderT LFCfg (StateT LFState IO) a)
 
 runLF :: LFCfg -> LFState -> LF a -> IO a
 runLF cfg state (LF act) = flip evalStateT state . flip runReaderT cfg $ act
+
+purgeOld :: Update Database ()
+purgeOld = readFeeds .= Map.empty
 
 getChannels :: Visibility -> Query Database [Channel]
 getChannels OnlyUnread = Map.keys <$> view unreadFeeds
@@ -294,7 +299,13 @@ guidOrSHA i = view itemId i <|> (review _IdFromContentSHA . showDigest) <$> sha
         maybeItemContent = view itemContent i
         maybeChannelTitle = view (itemChannel . channelUrl) i
 
-$(makeAcidic ''Database ['getItems, 'allItems, 'updateFeeds, 'markAsRead, 'getChannels])
+$(makeAcidic ''Database ['getItems
+                        ,'allItems
+                        ,'updateFeeds
+                        ,'markAsRead
+                        ,'getChannels
+                        ,'purgeOld
+                        ])
 
 initialDb :: Database
 initialDb = Database Map.empty Map.empty Set.empty

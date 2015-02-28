@@ -113,6 +113,7 @@ setupGui trigger acid fetcher = do
     _ -> return False
 
   fgChannel `onKeyPressed` \_ k ms -> case (k,ms) of
+    (KChar 'P',[]) -> trigger PurgeOldItems
     (KChar 'Q',[]) -> trigger QuitLambdaFeed
     (KChar 'l',[]) -> trigger ToggleChannelVisibility
     (KChar 'u',[]) -> trigger FetchAll

@@ -194,6 +194,10 @@ handleGUIEvent seal e = handle e
           liftIO $ appendText w (" > " <> sanitizedTitle chan)
           showItemsFor chan
         handle (ItemActivated item) = showContentFor item
+        handle PurgeOldItems = do
+          updateAcid PurgeOld
+          statusSet "Purged old items."
+          updateChannelWidget
         handle QuitLambdaFeed = liftIO $ atomically seal >> shutdownUi >> exitSuccess
         handle BackToChannels = do
           resetHeader
