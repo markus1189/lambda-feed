@@ -21,7 +21,7 @@ import           Data.Acid.Local (createCheckpointAndClose)
 import           Data.Functor ((<$>))
 import           Data.List (sort)
 import qualified Data.Text as T
-import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar,KEnter,KEsc), Modifier(..), defAttr, white, rgbColor)
+import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar,KEnter,KEsc), Modifier(..), defAttr, white, rgbColor, withForeColor)
 import           Graphics.Vty.Widgets.All hiding (wrap)
 import qualified Graphics.Vty.Widgets.Text as WT
 import           Pipes.Concurrent (send, spawn', bounded, atomically)
@@ -58,7 +58,23 @@ setupGui :: (GuiEvent -> IO Bool)
          -> IO (LFCfg, LFState, Collection)
 setupGui trigger acid fetcher = do
   header <- plainText "λ Feed"
-  infoBar <- plainText "(j/k:move) (i:bookmark) (l:toggle read) (Enter:activate) (L:Logging) (P:Purge) (E:edit urls) (A:Mark read)"
+  infoBar <- plainTextWithAttrs [("j/k",defAttr `withForeColor` orange)
+                                ,(":move | ",defAttr)
+                                ,("i",defAttr `withForeColor` orange)
+                                ,(":bookmark | ",defAttr)
+                                ,("l",defAttr `withForeColor` orange)
+                                ,(":toggle read | ",defAttr)
+                                ,("Enter",defAttr `withForeColor` orange)
+                                ,(":activate | ",defAttr)
+                                ,("L",defAttr `withForeColor` orange)
+                                ,(":Logging | ",defAttr)
+                                ,("P",defAttr `withForeColor` orange)
+                                ,(":purge read | ",defAttr)
+                                ,("E",defAttr `withForeColor` orange)
+                                ,(":edit urls | ",defAttr)
+                                ,("A",defAttr `withForeColor` orange)
+                                ,(":mark read",defAttr)
+                               ]
   statusBar <- plainText ""
 
   loggingList <- newList' 1
