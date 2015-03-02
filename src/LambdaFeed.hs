@@ -176,6 +176,7 @@ handleFetcherEvent (CompletedSingleFetch _ url items) = do
     updateChannelWidget
   logIt' ("Fetched " <> (T.pack (show (Seq.length items))) <> " items from: " <> url )
 handleFetcherEvent (FetchFinished _) = do
+  (liftIO . createCheckpoint) =<< view lfAcid
   statusSet "Fetch complete"
   logIt' "Fetching finished"
   trigger <- view triggerEvt
