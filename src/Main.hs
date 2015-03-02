@@ -13,6 +13,7 @@ module Main (main) where
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative (pure)
 #endif
+
 import           Control.Exception (bracket)
 import           Control.Lens.Operators
 import           Control.Monad.Reader
@@ -52,11 +53,8 @@ newList' i = do l <- newList i
                 setNormalAttribute l myDefAttr
                 return l
 
-setupGui :: (GuiEvent -> IO Bool)
-         -> AcidState Database
-         -> Actor FetcherControl FetcherEvent
-         -> IO (LFCfg, LFState, Collection)
-setupGui trigger acid fetcher = do
+setupGui :: (GuiEvent -> IO Bool) -> IO (SwitchTo, LFWidgets, Collection)
+setupGui trigger  = do
   header <- plainText "λ Feed"
   infoBar <- plainTextWithAttrs [("j/k",defAttr `withForeColor` orange)
                                 ,(":move | ",defAttr)
@@ -187,11 +185,10 @@ setupGui trigger acid fetcher = do
       (KEsc, []) -> trigger AbortUrlEditing
       _ -> return False
 
-  let cfg = LFCfg acid switches widgets ("bullet-push", ["link"]) (void . trigger) fetcher "lambda-feed-urls"
-      switches = SwitchTo channelView itemView contentView loggingView editUrlView
+  let switches = SwitchTo channelView itemView contentView loggingView editUrlView
       widgets = LFWidgets channelList itemList contentWidget' loggingList statusBar header editUrlWidget'
-      s = initialLFState
-  return (cfg,s,c)
+
+  return (switches,widgets,c)
 
 viKeys :: Widget (List a b) -> Key -> [Modifier] -> IO Bool
 viKeys = handler
@@ -205,8 +202,16 @@ main :: IO ()
 main = bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
   fetcher <- fetchActor (30 * 1000 * 1000)
   (output,input,seal) <- spawn' (bounded 10)
-  (cfg,s,c) <- setupGui (\e -> atomically $ send output e) acid fetcher
-  lambdaFeed seal (fetcher ^. actorOutbox) input cfg s
+  let pushEvent = atomically . send output
+  (switches,widgets,collection) <- setupGui pushEvent
+  let cfg = LFCfg acid
+                  switches
+                  widgets
+                  ("bullet-push", ["link"])
+                  (void . pushEvent)
+                  fetcher
+                  "lambda-feed-urls"
+  lambdaFeed seal (fetcher ^. actorOutbox) input cfg initialLFState
   void . atomically $ send output BackToChannels
   void . atomically $ send output FetchAll
-  runUi c defaultContext
+  runUi collection defaultContext
