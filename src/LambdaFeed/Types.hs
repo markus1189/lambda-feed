@@ -116,7 +116,7 @@ import LambdaFeed.Actor
 
 data RetrievalError = RetrievalHttpError Text HttpException
                     | TimeOutDuringRetrieve Text Int
-                    | FeedParseError Text Text
+                    | FeedParseError Text
                     deriving (Show)
 data Channel = Channel { _channelTitle :: Text
                        , _channelUrl :: Maybe Text
