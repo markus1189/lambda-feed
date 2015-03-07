@@ -29,7 +29,7 @@ fetch1 dt url = do
   case feedOrErr of
      Nothing -> return . Left $ TimeOutDuringRetrieve url dt
      Just (Left e) -> return . Left $ RetrievalHttpError url e
-     Just (Right resp) -> do
+     Just (Right resp) ->
        case parse resp of
           Nothing -> return . Left $ FeedParseError url
           Just f -> do

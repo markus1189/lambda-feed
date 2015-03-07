@@ -1,10 +1,8 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -110,7 +108,7 @@ setupGui trigger  = do
   void $ addToFocusGroup fgContent contentWidget'
 
   editUrlWidget' <- multiLineEditWidget
-  setFocusAttribute editUrlWidget' $ white `on` (rgbColor (0::Int) 0 0)
+  setFocusAttribute editUrlWidget' (white `on` rgbColor (0::Int) 0 0)
   urlEditUI <- wrap header statusBar infoBar editUrlWidget'
   fgUrlEdit <- newFocusGroup
   void $ addToFocusGroup fgUrlEdit editUrlWidget'
@@ -148,7 +146,7 @@ setupGui trigger  = do
     (KChar 'q',[]) -> trigger BackToChannels
     _ -> return False
 
-  channelList `onItemActivated` \(ActivateItemEvent _ chan _) -> do
+  channelList `onItemActivated` \(ActivateItemEvent _ chan _) ->
     void $ trigger (ChannelActivated chan)
 
   channelList `onKeyPressed` \this k ms -> case (k,ms) of
@@ -165,7 +163,7 @@ setupGui trigger  = do
       maybe (return False) (\(_,(item,_)) -> trigger (ExternalCommandOnItem item)) maybeSel
     _ -> return False
 
-  itemList `onItemActivated` \(ActivateItemEvent _ item _) -> do
+  itemList `onItemActivated` \(ActivateItemEvent _ item _) ->
     void $ trigger (ItemActivated item)
 
   loggingList `onItemAdded` \_ -> do

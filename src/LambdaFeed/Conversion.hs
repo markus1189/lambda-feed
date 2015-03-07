@@ -25,12 +25,12 @@ convertFeedToFeedItems src now extFeed = convertFeedItem src now extFeed
 
 convertFeedItem :: Text -> UTCTime -> Ext.Feed -> Item -> FeedItem
 convertFeedItem src now srcFeed i = FeedItem title url curl content pubDateOrNow chan guid
-  where title = T.pack <$> (getItemTitle i)
+  where title = T.pack <$> getItemTitle i
         url = T.pack <$> getItemLink i
         curl = T.pack <$> getItemCommentLink i
         content = getFeedContent i
         guid = (review _IdFromFeed . snd) <$> getItemId i <|> sha
-        chan = Channel (T.pack (getFeedTitle srcFeed)) (T.pack <$> (getFeedHome srcFeed)) src
+        chan = Channel (T.pack (getFeedTitle srcFeed)) (T.pack <$> getFeedHome srcFeed) src
         pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
         sha = review (below _IdFromContentSHA) $ showDigest . sha1 . view lazy . T.encodeUtf8 <$> (content <> title)
 

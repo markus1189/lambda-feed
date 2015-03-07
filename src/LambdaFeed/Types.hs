@@ -268,7 +268,7 @@ markAsRead c = do
       readFeeds . at c . non Seq.empty %= reverseDateSort . (>< toMove)
 
 reverseDateSort :: Seq FeedItem -> Seq FeedItem
-reverseDateSort = Seq.sortBy (\i1 i2 -> (compare `on` view itemPubDate) i2 i1)
+reverseDateSort = Seq.sortBy (flip compare `on` view itemPubDate)
 
 updateFeeds :: Seq FeedItem -> Update Database ()
 updateFeeds feeds = do

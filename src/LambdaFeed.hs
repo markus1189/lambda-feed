@@ -26,15 +26,13 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import           Data.Text.Lens (_Text)
-import           Data.Time (UTCTime, utcToLocalTime)
+import           Data.Time (UTCTime, utcToLocalTime, formatTime, getCurrentTimeZone, getCurrentTime)
 import           System.Directory (doesFileExist)
 #if __GLASGOW_HASKELL__ >= 710
 import           Data.Time (defaultTimeLocale, rfc822DateFormat)
 #else
 import           System.Locale (defaultTimeLocale, rfc822DateFormat)
 #endif
-import           Data.Time (formatTime)
-import           Data.Time (getCurrentTime, getCurrentTimeZone)
 import           Formatting (sformat, left, (%), (%.), stext, int)
 import           Formatting.Time (monthNameShort, dayOfMonth, hms)
 import           Graphics.Vty (Attr)
@@ -141,9 +139,9 @@ display r = [("Feed: " <> view renderedFeed r, myHeaderHighlight)
 lambdaFeed :: STM () -> Input FetcherEvent -> Input GuiEvent -> LFCfg -> LFState -> IO ()
 lambdaFeed seal fetcherEvents guiEvents cfg s = do
   exists <- doesFileExist (cfg ^. lfUrlsFile)
-  when (not exists) $ TIO.writeFile (cfg ^. lfUrlsFile) ""
-  let inputs = ((Left <$> fetcherEvents) <> (Right <$> guiEvents))
-  void . forkIO $ runLF cfg s . runEffect $ fromInput inputs >-> (forever $ do
+  unless exists $ TIO.writeFile (cfg ^. lfUrlsFile) ""
+  let inputs = (Left <$> fetcherEvents) <> (Right <$> guiEvents)
+  void . forkIO $ runLF cfg s . runEffect $ fromInput inputs >-> forever (do
     event <- await
     case event of
       Left fetcherEvent -> lift (handleFetcherEvent fetcherEvent)
@@ -158,7 +156,7 @@ fetchAllFeeds :: LF ()
 fetchAllFeeds = do
   fetcher <- view lfFetcherActor
   us <- readUrlsFromFile
-  void . liftIO . atomically . send (fetcher ^. actorInbox) $ (StartFetch us)
+  void . liftIO . atomically . send (fetcher ^. actorInbox) $ StartFetch us
 
 resetHeader :: LF ()
 resetHeader = do
@@ -171,21 +169,21 @@ handleFetcherEvent (StartedSingleFetch _ url (cur,total)) = do
   statusSet msg
   logIt' msg
 handleFetcherEvent (CompletedSingleFetch _ url items) = do
-  when (not (Seq.null items)) $ do
+  unless (Seq.null items) $ do
     updateAcid (UpdateFeeds items)
     updateChannelWidget
-  logIt' ("Fetched " <> (T.pack (show (Seq.length items))) <> " items from: " <> url )
+  logIt' ("Fetched " <> T.pack (show (Seq.length items)) <> " items from: " <> url )
 handleFetcherEvent (FetchFinished _) = do
   (liftIO . createCheckpoint) =<< view lfAcid
   statusSet "Fetch complete"
   logIt' "Fetching finished"
   trigger <- view triggerEvt
   liftIO . void . async $ threadDelay (30 * 60 * 1000 * 1000) >> trigger FetchAll
-handleFetcherEvent (ErrorDuringFetch url err) = do
+handleFetcherEvent (ErrorDuringFetch url err) =
   logIt ("Failed to fetch " <> url) (T.pack $ show err)
 
 handleGUIEvent :: STM () -> GuiEvent -> LF ()
-handleGUIEvent seal e = handle e
+handleGUIEvent seal = handle
   where handle :: GuiEvent -> LF ()
         handle (Compose e1 e2) = handle e1 >> handle e2
         handle FetchAll = fetchAllFeeds
@@ -269,7 +267,7 @@ executeExternal item = do
       res <- try_ . retry 3 $ do
                (_,_,_,p) <- runInteractiveProcess
                               command
-                              (args ++ [(T.unpack title), (T.unpack url)])
+                              (args ++ [T.unpack title, T.unpack url])
                               Nothing
                               Nothing
                waitForProcess p
@@ -329,7 +327,7 @@ getLogCommand = do
 getStatusLogCommand :: LF (Text -> IO ())
 getStatusLogCommand = do
   widget <- view (lfWidgets . statusBarWidget)
-  return $ \status -> liftIO . schedule $ do
+  return $ \status -> liftIO . schedule $
     setText widget status
 
 statusSet :: Text -> LF ()

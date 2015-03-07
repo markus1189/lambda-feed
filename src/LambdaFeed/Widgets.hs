@@ -33,7 +33,7 @@ newArticleWidget = do
 setArticle :: Widget (List Text FormattedText) -> [(Text,Attr)] -> IO ()
 setArticle w contents = do
   clearList w
-  for_ contents $ \(content,attr) -> do
+  for_ contents $ \(content,attr) ->
     for_ (T.lines content)  $ \line -> do
       lineW <- plainTextWithAttrs [(line,attr)]
       addToList w line lineW
