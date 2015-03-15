@@ -20,7 +20,7 @@ executable lambda-feed
                      , feed >= 0.3.9.2 && < 0.4
                      , formatting >= 6.2 && < 6.3
                      , http-client >= 0.4 && < 0.5
-                     , lens >= 4.7 && < 4.8
+                     , lens >= 4.7 && < 4.9
                      , mtl >= 2.2 && < 2.3
                      , pipes >= 4.1 && < 4.2
                      , pipes-concurrency >= 2.0 && < 2.1
