@@ -6,18 +6,21 @@ module LambdaFeed.Widgets (newArticleWidget
                           ,myDefAttr
                           ,orange
                           ,myHeaderHighlight
+                          ,getListItems
                           ) where
 
-#if __GLASGOW_HASKELL__ < 710
-import Control.Applicative
-#endif
-
-import           Data.Foldable (for_)
+import           Data.Maybe (catMaybes)
+import           Control.Monad.IO.Class
+import           Data.Foldable (for_,)
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Data.Traversable (for)
 import           Graphics.Vty
 import           Graphics.Vty.Widgets.All
-import Control.Monad.IO.Class
+
+#if __GLASGOW_HASKELL__ < 710
+import           Control.Applicative
+#endif
 
 newArticleWidget :: Show b => IO (Widget (List a b))
 newArticleWidget = do
@@ -56,3 +59,8 @@ saveSelection w act = do
   maybeSelected <- liftIO (getSelected w)
   act
   for_ maybeSelected $ \(i,_) -> liftIO (schedule $ setSelected w i)
+
+getListItems :: Widget (List a b) -> IO [a]
+getListItems w = do
+  size <- getListSize w
+  map fst . catMaybes <$> for [0..size-1] (getListItem w)
