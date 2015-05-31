@@ -32,6 +32,7 @@ import           System.Directory (doesFileExist)
 import           Data.Time (defaultTimeLocale, rfc822DateFormat)
 #else
 import           System.Locale (defaultTimeLocale, rfc822DateFormat)
+import           Data.Traversable (traverse)
 #endif
 import           Formatting (sformat, left, (%), (%.), stext, int)
 import           Formatting.Time (monthNameShort, dayOfMonth, hms)
