@@ -205,6 +205,7 @@ handleGUIEvent seal = handle
         handle BackToItems = switchUsing switchToItems
         handle MarkCurrentChannelRead = markCurrentChannelRead
         handle (MarkChannelRead chan) = markChannelRead chan
+        handle MarkAllChannelsRead = markAllChannelsRead
         handle ToggleChannelVisibility = do
           vis <- use lfVisibility
           lfVisibility .= case vis of
@@ -245,6 +246,12 @@ prepareEditUrls = do
 markChannelRead :: Channel -> LF ()
 markChannelRead chan = do
   updateAcid (MarkAsRead chan)
+  updateChannelWidget
+
+markAllChannelsRead :: LF ()
+markAllChannelsRead = do
+  widget <- view (lfWidgets . channelWidget)
+  liftIO (getListItems widget) >>= traverse (updateAcid . MarkAsRead)
   updateChannelWidget
 
 markCurrentChannelRead :: LF ()

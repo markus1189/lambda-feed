@@ -69,8 +69,12 @@ setupGui trigger  = do
                                 ,("E",defAttr `withForeColor` orange)
                                 ,(":edit urls | ",defAttr)
                                 ,("A",defAttr `withForeColor` orange)
-                                ,(":mark read",defAttr)
-                               ]
+                                ,(":mark read | ",defAttr)
+                                ,("u",defAttr `withForeColor` orange)
+                                ,(":manual update | ",defAttr)
+                                ,("C",defAttr `withForeColor` orange)
+                                ,(":mark all read",defAttr)
+                                ]
   statusBar <- plainText ""
 
   loggingList <- newList' 1
@@ -128,6 +132,7 @@ setupGui trigger  = do
     _ -> return False
 
   fgChannel `onKeyPressed` \_ k ms -> case (k,ms) of
+    (KChar 'C',[]) -> trigger MarkAllChannelsRead
     (KChar 'P',[]) -> trigger PurgeOldItems
     (KChar 'Q',[]) -> trigger QuitLambdaFeed
     (KChar 'l',[]) -> trigger ToggleChannelVisibility

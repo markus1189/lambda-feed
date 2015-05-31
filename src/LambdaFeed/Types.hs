@@ -197,6 +197,7 @@ data GuiEvent = ChannelActivated Channel
               | BackToItems
               | MarkCurrentChannelRead
               | MarkChannelRead Channel
+              | MarkAllChannelsRead
               | ToggleChannelVisibility
               | ToggleItemVisibility
               | FetchAll
