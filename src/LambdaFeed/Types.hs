@@ -87,7 +87,7 @@ module LambdaFeed.Types (Channel(Channel)
 
 import           Control.Applicative
 import           Control.Concurrent.Async (Async)
-import           Control.Lens (view, use, lazy, at, non, review)
+import           Control.Lens (view, use, lazy, at, non, review, contains)
 import           Control.Lens.Operators
 import           Control.Lens.TH
 import           Control.Monad.IO.Class (MonadIO)
@@ -153,9 +153,9 @@ makeLenses ''RenderedItem
 
 data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
                          , _readFeeds :: Map Channel (Seq FeedItem)
-                         , _seenItems :: Set ItemId
+                         , _seenItems :: Map Channel (Set ItemId)
                          } deriving (Data,Typeable)
-$(deriveSafeCopy 2 'base ''Database)
+$(deriveSafeCopy 3 'base ''Database)
 makeLenses ''Database
 
 data Visibility = OnlyUnread | OnlyRead | ReadAndUnread
@@ -275,12 +275,24 @@ updateFeeds :: Seq FeedItem -> Update Database ()
 updateFeeds feeds = do
   seen <- use seenItems
   unreadFeeds %= fmap reverseDateSort
-               . Map.unionWith (><) (collectNewItems (`Set.member` seen) feeds)
-  seenItems %= Set.union (generateIdentifiers feeds)
+               . Map.unionWith (><) (collectNewItems seen feeds)
+  seenItems %= \old ->
+    Map.unionWith Set.intersection old (foldl' go Map.empty feedsWithGuid)
+  where go :: Map Channel (Set ItemId)
+           -> (Channel, Maybe ItemId)
+           -> Map Channel (Set ItemId)
+        go m (chan, Just guid) = Map.insertWith Set.union chan (Set.singleton guid) m
+        go m (chan, Nothing) = m
 
-collectNewItems :: (Functor f, Foldable f) => (ItemId -> Bool) -> f FeedItem -> Map Channel (Seq FeedItem)
-collectNewItems isKnown = foldl' step Map.empty
-  where isNew (guidOrSHA -> (Just guid)) = not (isKnown guid)
+        feedsWithGuid = Seq.zip (fmap (view itemChannel) feeds) (fmap guidOrSHA feeds)
+
+collectNewItems :: (Functor f, Foldable f)
+                => Map Channel (Set ItemId)
+                -> f FeedItem
+                -> Map Channel (Seq FeedItem)
+collectNewItems seen = foldl' step Map.empty
+  where isNew i@(guidOrSHA -> (Just guid)) =
+          not (seen ^. at (i ^. itemChannel) . non Set.empty . contains guid)
         isNew _ = False
 
         step :: Map Channel (Seq FeedItem) -> FeedItem -> Map Channel (Seq FeedItem)
@@ -309,4 +321,4 @@ $(makeAcidic ''Database ['getItems
                         ])
 
 initialDb :: Database
-initialDb = Database Map.empty Map.empty Set.empty
+initialDb = Database Map.empty Map.empty Map.empty
