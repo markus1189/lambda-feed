@@ -11,7 +11,8 @@ commandline.  Feeds are stored using **acid-state**.
 
 This is a WIP and therefore a little rough around the edges.  In
 addition to this note that it was primarily written for my personal
-needs so it might not be everyone's case.
+needs so it might not be everyone's case.  Having said that I
+currently use it daily without major problems.
 
 The intended (/my) workflow is to use it to quickly sort through your
 favourite feeds and **bookmark** the items that interest you, where
