@@ -94,6 +94,7 @@ import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader (MonadReader, ReaderT, runReaderT)
 import           Control.Monad.State (MonadState, StateT, evalStateT)
 import           Data.Acid
+import           Data.Bool (bool)
 import           Data.Data (Data, Typeable)
 import           Data.Digest.Pure.SHA
 import           Data.Foldable
@@ -112,7 +113,7 @@ import           Data.Time
 import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, Edit)
 import           Network.HTTP.Client (HttpException)
 
-import LambdaFeed.Actor
+import           LambdaFeed.Actor
 
 data RetrievalError = RetrievalHttpError Text HttpException
                     | TimeOutDuringRetrieve Text Int
@@ -282,7 +283,7 @@ updateFeeds feeds = do
            -> (Channel, Maybe ItemId)
            -> Map Channel (Set ItemId)
         go m (chan, Just guid) = Map.insertWith Set.union chan (Set.singleton guid) m
-        go m (chan, Nothing) = m
+        go m (_, Nothing) = m
 
         feedsWithGuid = Seq.zip (fmap (view itemChannel) feeds) (fmap guidOrSHA feeds)
 
@@ -296,15 +297,9 @@ collectNewItems seen = foldl' step Map.empty
         isNew _ = False
 
         step :: Map Channel (Seq FeedItem) -> FeedItem -> Map Channel (Seq FeedItem)
-        step acc item = if isNew item
-                           then acc & at (view itemChannel item) . non Seq.empty
-                                    %~ (|> item)
-                           else acc
+        step acc item = bool acc inserted (isNew item)
+          where inserted = acc & at (item ^. itemChannel) . non Seq.empty %~ (|> item)
 
-generateIdentifiers :: Foldable f => f FeedItem -> Set ItemId
-generateIdentifiers = foldl' go Set.empty
-  where go acc (guidOrSHA -> Just guid) = Set.insert guid acc
-        go acc _ = acc
 
 guidOrSHA :: FeedItem -> Maybe ItemId
 guidOrSHA i = view itemId i <|> (review _IdFromContentSHA . showDigest) <$> sha

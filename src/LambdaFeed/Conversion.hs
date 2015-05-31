@@ -1,10 +1,14 @@
+{-# LANGUAGE CPP #-}
 module LambdaFeed.Conversion (convertFeedToFeedItems) where
 
 import           Control.Applicative ((<|>))
 import           Control.Lens (lazy, view, below, review)
 import           Control.Monad (join)
 import           Data.Digest.Pure.SHA (sha1, showDigest)
+#if __GLASGOW_HASKELL__ >= 710
+#else
 import           Data.Functor ((<$>))
+#endif
 import           Data.Maybe (fromJust)
 import           Data.Monoid ((<>))
 import           Data.Sequence (Seq)

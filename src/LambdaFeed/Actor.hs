@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 module LambdaFeed.Actor (Actor
                         ,actorInbox
                         ,actorOutbox
@@ -15,7 +16,10 @@ import Control.Concurrent.Async (Async,async,cancel,poll)
 import Control.Lens.Operators
 import Control.Lens.TH
 import Control.Monad.State
+#if __GLASGOW_HASKELL__ >= 710
+#else
 import Data.Functor ((<$>))
+#endif
 import Data.Maybe (isNothing)
 import Pipes
 import Pipes.Concurrent

@@ -10,6 +10,7 @@ module Main (main) where
 
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative (pure)
+import           Data.Functor ((<$>))
 #endif
 
 import           Control.Exception (bracket)
@@ -17,7 +18,6 @@ import           Control.Lens.Operators
 import           Control.Monad.Reader
 import           Data.Acid
 import           Data.Acid.Local (createCheckpointAndClose)
-import           Data.Functor ((<$>))
 import           Data.List (sort)
 import qualified Data.Text as T
 import           Graphics.Vty (Attr(Attr), MaybeDefault(KeepCurrent,SetTo), black, Key(KChar,KEnter,KEsc), Modifier(..), defAttr, white, rgbColor, withForeColor)

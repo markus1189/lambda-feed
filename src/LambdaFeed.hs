@@ -252,7 +252,7 @@ markChannelRead chan = do
 markAllChannelsRead :: LF ()
 markAllChannelsRead = do
   widget <- view (lfWidgets . channelWidget)
-  liftIO (getListItems widget) >>= traverse (updateAcid . MarkAsRead)
+  void (liftIO (getListItems widget) >>= traverse (updateAcid . MarkAsRead))
   updateChannelWidget
 
 markCurrentChannelRead :: LF ()
