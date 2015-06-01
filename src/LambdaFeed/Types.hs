@@ -290,7 +290,7 @@ nonAcidUpdateFeeds :: MonadState Database m => Seq FeedItem -> m ()
 nonAcidUpdateFeeds feeds = do
   seen <- use seenItems
   unreadFeeds %= fmap reverseDateSort . Map.unionWith (><) (collectNewItems seen feeds)
-  seenItems %= Map.unionWith Set.intersection (feedsWithGuid feeds)
+  seenItems %= Map.union (feedsWithGuid feeds)
 
 feedsWithGuid :: Foldable f => f FeedItem -> Map Channel (Set ItemId)
 feedsWithGuid feeds = foldl' step Map.empty feeds
