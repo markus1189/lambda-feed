@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ViewPatterns #-}
-module Main (main) where
+module LambdaFeed.Main (start) where
 
 #if __GLASGOW_HASKELL__ < 710
 import           Control.Applicative (pure)
@@ -201,8 +201,8 @@ viKeys = handler
         handler w (KChar 'G') [] = scrollToEnd w >> return True
         handler _ _ _ = return False
 
-main :: IO ()
-main = bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
+start :: IO ()
+start = bracket (openLocalState initialDb) createCheckpointAndClose $ \acid -> do
   fetcher <- fetchActor (30 * 1000 * 1000)
   (output,input,seal) <- spawn' (bounded 10)
   let pushEvent = atomically . send output

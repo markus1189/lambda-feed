@@ -6,10 +6,16 @@ maintainer:          markus1189@gmail.com
 build-type:          Simple
 cabal-version:       >=1.10
 
-executable lambda-feed
-  main-is:             Main.hs
-  ghc-options:         -threaded -Wall
+library
+  ghc-options:         -Wall
   hs-source-dirs:      src
+  exposed-modules:     LambdaFeed
+                     , LambdaFeed.Actor
+                     , LambdaFeed.Conversion
+                     , LambdaFeed.Main
+                     , LambdaFeed.Retrieval
+                     , LambdaFeed.Types
+                     , LambdaFeed.Widgets
   build-depends:       SHA >= 1.6 && < 1.7
                      , acid-state >= 0.12 && < 0.13
                      , async >= 2.0 && < 2.1
@@ -34,4 +40,12 @@ executable lambda-feed
                      , vty >= 5.2 && < 5.4
                      , vty-ui >= 1.8 && < 2.0
                      , wreq >= 0.4 && < 0.5
+  default-language:    Haskell2010
+
+executable lambda-feed
+  main-is:             Main.hs
+  ghc-options:         -threaded -Wall
+  hs-source-dirs:      main
+  build-depends:       base
+                     , lambda-feed
   default-language:    Haskell2010
