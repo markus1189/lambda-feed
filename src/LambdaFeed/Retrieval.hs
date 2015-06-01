@@ -1,5 +1,5 @@
 {-# LANGUAGE TupleSections #-}
-module LambdaFeed.Retrieval (fetchActor) where
+module LambdaFeed.Retrieval (fetchActor, fetch1) where
 
 import           Control.Exception.Base (try)
 import           Control.Lens (view, strict)

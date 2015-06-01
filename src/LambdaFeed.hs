@@ -295,7 +295,7 @@ updateChannelWidget = do
   urls <- readUrlsFromFile
   (unreadItems,readItems) <- queryAcid AllItems
   visibleChannels <- sortAsGiven urls <$> queryAcid (GetChannels vis)
-  liftIO . saveSelection widget . schedule $ do
+  liftIO . schedule . saveSelection widget $ do
     clearList widget
     for_ visibleChannels $ \chan -> do
       let numItemsUnread = maybe 0 Seq.length $ Map.lookup chan unreadItems

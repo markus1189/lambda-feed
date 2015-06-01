@@ -4,6 +4,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE FlexibleContexts #-}
 module LambdaFeed.Types (Channel(Channel)
                         ,channelTitle
                         ,channelUrl
@@ -35,6 +36,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,readFeeds
                         ,unreadFeeds
                         ,initialDb
+                        ,seenItems
 
                         ,Visibility(..)
 
@@ -83,11 +85,17 @@ module LambdaFeed.Types (Channel(Channel)
                         ,RetrievalError(..)
                         ,FetcherControl(..)
                         ,FetcherEvent(..)
+
+                        ,collectNewItems
+                        ,guidOrSHA
+                        ,feedsWithGuid
+                        ,nonAcidMarkAsRead
+                        ,nonAcidUpdateFeeds
                         ) where
 
 import           Control.Applicative
 import           Control.Concurrent.Async (Async)
-import           Control.Lens (view, use, lazy, at, non, review, contains)
+import           Control.Lens (view, use, lazy, at, non, review)
 import           Control.Lens.Operators
 import           Control.Lens.TH
 import           Control.Monad.IO.Class (MonadIO)
@@ -101,6 +109,7 @@ import           Data.Foldable
 import           Data.Function (on)
 import           Data.Map (Map)
 import qualified Data.Map as Map
+import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
 import           Data.SafeCopy
 import           Data.Sequence (Seq, (><))
@@ -155,7 +164,7 @@ makeLenses ''RenderedItem
 data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
                          , _readFeeds :: Map Channel (Seq FeedItem)
                          , _seenItems :: Map Channel (Set ItemId)
-                         } deriving (Data,Typeable)
+                         } deriving (Eq,Data,Typeable)
 $(deriveSafeCopy 3 'base ''Database)
 makeLenses ''Database
 
@@ -262,7 +271,10 @@ allItems :: Query Database (Map Channel (Seq FeedItem), Map Channel (Seq FeedIte
 allItems = (,) <$> view unreadFeeds <*> view readFeeds
 
 markAsRead :: Channel -> Update Database ()
-markAsRead c = do
+markAsRead = nonAcidMarkAsRead
+
+nonAcidMarkAsRead :: MonadState Database m => Channel -> m ()
+nonAcidMarkAsRead c = do
   maybeToMove <- unreadFeeds . at c <<.= Nothing
   case maybeToMove of
     Nothing -> return ()
@@ -273,28 +285,33 @@ reverseDateSort :: Seq FeedItem -> Seq FeedItem
 reverseDateSort = Seq.sortBy (flip compare `on` view itemPubDate)
 
 updateFeeds :: Seq FeedItem -> Update Database ()
-updateFeeds feeds = do
-  seen <- use seenItems
-  unreadFeeds %= fmap reverseDateSort
-               . Map.unionWith (><) (collectNewItems seen feeds)
-  seenItems %= \old ->
-    Map.unionWith Set.intersection old (foldl' go Map.empty feedsWithGuid)
-  where go :: Map Channel (Set ItemId)
-           -> (Channel, Maybe ItemId)
-           -> Map Channel (Set ItemId)
-        go m (chan, Just guid) = Map.insertWith Set.union chan (Set.singleton guid) m
-        go m (_, Nothing) = m
+updateFeeds = nonAcidUpdateFeeds
 
-        feedsWithGuid = Seq.zip (fmap (view itemChannel) feeds) (fmap guidOrSHA feeds)
+nonAcidUpdateFeeds :: MonadState Database m => Seq FeedItem -> m ()
+nonAcidUpdateFeeds feeds = do
+  seen <- use seenItems
+  unreadFeeds %= fmap reverseDateSort . Map.unionWith (><) (collectNewItems seen feeds)
+  seenItems %= Map.unionWith Set.intersection (feedsWithGuid feeds)
+
+feedsWithGuid :: Foldable f => f FeedItem -> Map Channel (Set ItemId)
+feedsWithGuid feeds = foldl' step Map.empty feeds
+  where step :: Map Channel (Set ItemId) -> FeedItem -> Map Channel (Set ItemId)
+        step acc item =
+          Map.insertWith Set.union
+                         (item ^. itemChannel)
+                         (fromMaybe Set.empty (Set.singleton <$> (guidOrSHA item)))
+                         acc
 
 collectNewItems :: (Functor f, Foldable f)
-                => Map Channel (Set ItemId)
-                -> f FeedItem
-                -> Map Channel (Seq FeedItem)
+                 => Map Channel (Set ItemId)
+                 -> f FeedItem
+                 -> Map Channel (Seq FeedItem)
 collectNewItems seen = foldl' step Map.empty
-  where isNew i@(guidOrSHA -> (Just guid)) =
-          not (seen ^. at (i ^. itemChannel) . non Set.empty . contains guid)
-        isNew _ = False
+  where isOld item = fromMaybe False $ do
+          guid <- guidOrSHA item
+          itemsForChannel <- Map.lookup (item ^. itemChannel) seen
+          return (Set.member guid itemsForChannel)
+        isNew = not . isOld
 
         step :: Map Channel (Seq FeedItem) -> FeedItem -> Map Channel (Seq FeedItem)
         step acc item = bool acc inserted (isNew item)
