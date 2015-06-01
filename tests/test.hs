@@ -47,6 +47,9 @@ feedItem chan = do
   guid <- itemIdGen fi
   return (fi & itemId .~ guid)
 
+dropHead :: Seq a -> [Seq a]
+dropHead s = if Seq.null s then [] else [Seq.drop 1 s]
+
 channel :: Gen Channel
 channel = Channel <$> someText <*> maybeText <*> someText
 
@@ -77,23 +80,17 @@ markAllRead = traverse_ nonAcidMarkAsRead . getChannels
 specTests :: TestTree
 specTests = testGroup "QuickCheck"
   [QC.testProperty "update is idempotent" $
-     QC.forAllShrink sampleData (\fis -> if Seq.null fis
-                                            then []
-                                            else [Seq.drop 1 fis])$ \feeds ->
+     QC.forAllShrink sampleData dropHead $ \feeds ->
        withInitDb (nonAcidUpdateFeeds feeds) ==
          withInitDb (replicateM 2 (nonAcidUpdateFeeds feeds))
   ,QC.testProperty "update is idempotent wrt seenItems with mark read in between" $
-     QC.forAllShrink sampleData (\fis -> if Seq.null fis
-                                            then []
-                                            else [Seq.drop 1 fis])$ \feeds ->
+     QC.forAllShrink sampleData dropHead $ \feeds ->
        (withInitDb (nonAcidUpdateFeeds feeds)) ^. seenItems ==
           withInitDb (nonAcidUpdateFeeds feeds
                    >> markAllRead feeds
                    >> nonAcidUpdateFeeds feeds) ^. seenItems
   ,QC.testProperty "mark all read clears all unread items" $
-    QC.forAllShrink sampleData (\fis -> if Seq.null fis
-                                           then []
-                                           else [Seq.drop 1 fis]) $ \feeds ->
+    QC.forAllShrink sampleData dropHead $ \feeds ->
       flip evalState initialDb (nonAcidUpdateFeeds feeds
                              >> markAllRead feeds
                              >> uses unreadFeeds Map.null)
