@@ -18,12 +18,15 @@ before_script:
   - cabal --version
   - cabal update
   - cabal install "Cabal == $CABALVER.*"
+  - cabal update
   - cabal --version
   - ghc --version
   - ghc-pkg list
+  - cabal install --only-dependencies
 
 script:
   - cabal install
+  - cabal test
   - cabal sdist
 
 after_script:
