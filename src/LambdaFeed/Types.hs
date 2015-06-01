@@ -102,7 +102,6 @@ import           Control.Monad.IO.Class (MonadIO)
 import           Control.Monad.Reader (MonadReader, ReaderT, runReaderT)
 import           Control.Monad.State (MonadState, StateT, evalStateT)
 import           Data.Acid
-import           Data.Bool (bool)
 import           Data.Data (Data, Typeable)
 import           Data.Digest.Pure.SHA
 import           Data.Foldable
@@ -307,14 +306,13 @@ collectNewItems :: (Functor f, Foldable f)
                  -> f FeedItem
                  -> Map Channel (Seq FeedItem)
 collectNewItems seen = foldl' step Map.empty
-  where isOld item = fromMaybe False $ do
-          guid <- guidOrSHA item
-          itemsForChannel <- Map.lookup (item ^. itemChannel) seen
-          return (Set.member guid itemsForChannel)
+  where isOld item =
+          flip (maybe True) (guidOrSHA item) $ \guid ->
+            Set.member guid (Map.findWithDefault Set.empty (item ^. itemChannel) seen)
         isNew = not . isOld
 
         step :: Map Channel (Seq FeedItem) -> FeedItem -> Map Channel (Seq FeedItem)
-        step acc item = bool acc inserted (isNew item)
+        step acc item = if isNew item then inserted else acc
           where inserted = acc & at (item ^. itemChannel) . non Seq.empty %~ (|> item)
 
 
