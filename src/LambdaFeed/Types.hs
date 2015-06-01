@@ -164,7 +164,7 @@ makeLenses ''RenderedItem
 data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
                          , _readFeeds :: Map Channel (Seq FeedItem)
                          , _seenItems :: Map Channel (Set ItemId)
-                         } deriving (Eq,Data,Typeable)
+                         } deriving (Show,Eq,Data,Typeable)
 $(deriveSafeCopy 3 'base ''Database)
 makeLenses ''Database
 
