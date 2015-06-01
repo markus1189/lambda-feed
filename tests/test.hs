@@ -82,14 +82,14 @@ specTests = testGroup "QuickCheck"
                                             else [Seq.drop 1 fis])$ \feeds ->
        withInitDb (nonAcidUpdateFeeds feeds) ==
          withInitDb (replicateM 2 (nonAcidUpdateFeeds feeds))
-  ,QC.testProperty "update is idempotent also with mark read in between" $
+  ,QC.testProperty "update is idempotent wrt seenItems with mark read in between" $
      QC.forAllShrink sampleData (\fis -> if Seq.null fis
                                             then []
                                             else [Seq.drop 1 fis])$ \feeds ->
-       withInitDb (nonAcidUpdateFeeds feeds) ==
-         withInitDb (nonAcidUpdateFeeds feeds
-                  >> markAllRead feeds
-                  >> nonAcidUpdateFeeds feeds)
+       (withInitDb (nonAcidUpdateFeeds feeds)) ^. seenItems ==
+          withInitDb (nonAcidUpdateFeeds feeds
+                   >> markAllRead feeds
+                   >> nonAcidUpdateFeeds feeds) ^. seenItems
   ,QC.testProperty "mark all read clears all unread items" $
     QC.forAllShrink sampleData (\fis -> if Seq.null fis
                                            then []
