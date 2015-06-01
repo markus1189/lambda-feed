@@ -1,36 +1,100 @@
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-import           LambdaFeed.Retrieval
+import           Data.Foldable (toList, traverse_)
+import           Control.Lens (view, uses)
+import           Control.Lens.Operators
 import           LambdaFeed.Types
 import           Control.Monad.State
-import           Control.Monad ((=<<))
 import qualified Data.Sequence as Seq
 import           Data.Sequence (Seq)
+import qualified Data.Map as Map
+import           Data.Text (Text)
+import qualified Data.Text as T
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import           Data.Time.Clock (UTCTime)
 
 import           Test.Tasty
-import           Test.Tasty.SmallCheck as SC
-import           Test.Tasty.HUnit
-import           Test.Tasty.Hspec
+import           Test.Tasty.QuickCheck (Gen, choose, frequency, listOf, listOf1, elements, oneof)
+import qualified Test.Tasty.QuickCheck as QC
 
-main = tests >>= defaultMain
+maybeText :: Gen (Maybe Text)
+maybeText = fmap T.pack <$> (frequency [(1,pure Nothing)
+                                       ,(5,Just <$> listOf (elements ['A'..'z']))])
 
-tests :: IO TestTree
-tests = testGroup "Tests" <$> sequence [specTests]
+someText :: Gen Text
+someText = T.pack <$> listOf (elements ['A'..'z'])
+
+utcTime :: Gen UTCTime
+utcTime = posixSecondsToUTCTime . fromInteger <$> choose (0,1433176781)
+
+itemIdGen :: FeedItem -> Gen (Maybe ItemId)
+itemIdGen fi = oneof [(Just . IdFromFeed <$> listOf (elements ['A'..'z']))
+                     ,pure (guidOrSHA fi)
+                     ]
+
+feedItem :: Channel -> Gen FeedItem
+feedItem chan = do
+  fi <- FeedItem <$> maybeText
+                 <*> maybeText
+                 <*> maybeText
+                 <*> maybeText
+                 <*> utcTime
+                 <*> pure chan
+                 <*> pure Nothing
+  guid <- itemIdGen fi
+  return (fi & itemId .~ guid)
+
+channel :: Gen Channel
+channel = Channel <$> someText <*> maybeText <*> someText
+
+sampleData :: Gen (Seq FeedItem)
+sampleData = do
+  chans <- listOf channel
+  items <- traverse (listOf1 . feedItem) chans
+  return $ Seq.fromList (concat items)
+
+-- shrinkSampleData :: Seq FeedItem -> [Seq FeedItem]
+-- shrinkSampleData = map Seq.fromList . filterM (const [True,False]) . toList
+
+main :: IO ()
+main = defaultMain tests
+
+tests :: TestTree
+tests = testGroup "Tests" [specTests]
 
 withInitDb :: State Database a -> Database
 withInitDb = flip execState initialDb
 
-fetchFeeds :: IO (Seq FeedItem)
-fetchFeeds = do
-  Right feeds <- fetch1 (30 * 1000 * 1000) "http://www.reddit.com/r/haskell/.rss"
-  return feeds
+getChannels :: Foldable f => f FeedItem -> Set Channel
+getChannels = Set.fromList . map (view itemChannel) . toList
 
-specTests :: IO TestTree
-specTests = testGroup "Specs" <$>
-  sequence
-    [testSpec "HSpec" $
-         it "update is idempotent if feeds are fixed" $ do
-           feeds <- fetchFeeds
-           withInitDb (nonAcidUpdateFeeds feeds) `shouldBe`
-             withInitDb (replicateM 2 (nonAcidUpdateFeeds feeds))
-      ]
+markAllRead :: Foldable f => f FeedItem -> State Database ()
+markAllRead = traverse_ nonAcidMarkAsRead . getChannels
+
+specTests :: TestTree
+specTests = testGroup "QuickCheck"
+  [QC.testProperty "update is idempotent" $
+     QC.forAllShrink sampleData (\fis -> if Seq.null fis
+                                            then []
+                                            else [Seq.drop 1 fis])$ \feeds ->
+       withInitDb (nonAcidUpdateFeeds feeds) ==
+         withInitDb (replicateM 2 (nonAcidUpdateFeeds feeds))
+  ,QC.testProperty "update is idempotent also with mark read in between" $
+     QC.forAllShrink sampleData (\fis -> if Seq.null fis
+                                            then []
+                                            else [Seq.drop 1 fis])$ \feeds ->
+       withInitDb (nonAcidUpdateFeeds feeds) ==
+         withInitDb (nonAcidUpdateFeeds feeds
+                  >> markAllRead feeds
+                  >> nonAcidUpdateFeeds feeds)
+  ,QC.testProperty "mark all read clears all unread items" $
+    QC.forAllShrink sampleData (\fis -> if Seq.null fis
+                                           then []
+                                           else [Seq.drop 1 fis]) $ \feeds ->
+      flip evalState initialDb (nonAcidUpdateFeeds feeds
+                             >> markAllRead feeds
+                             >> uses unreadFeeds Map.null)
+  ]

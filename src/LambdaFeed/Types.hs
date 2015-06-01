@@ -19,7 +19,7 @@ module LambdaFeed.Types (Channel(Channel)
                         ,itemPubDate
                         ,itemId
 
-                        ,ItemId
+                        ,ItemId(IdFromFeed, IdFromContentSHA)
                         ,_IdFromFeed
                         ,_IdFromContentSHA
 
