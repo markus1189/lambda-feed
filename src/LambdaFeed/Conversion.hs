@@ -36,7 +36,8 @@ convertFeedItem src now srcFeed i = FeedItem title url curl content pubDateOrNow
         guid = (review _IdFromFeed . snd) <$> getItemId i <|> sha
         chan = Channel (T.pack (getFeedTitle srcFeed)) (T.pack <$> getFeedHome srcFeed) src
         pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
-        sha = review (below _IdFromContentSHA) $ showDigest . sha1 . view lazy . T.encodeUtf8 <$> (content <> title)
+        sha = review (below _IdFromContentSHA) $
+                showDigest . sha1 . view lazy . T.encodeUtf8 <$> (content <> title)
 
 getFeedContent :: Item -> Maybe Text
 getFeedContent (AtomItem i) = case Atom.entryContent i of
