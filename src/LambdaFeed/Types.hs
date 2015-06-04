@@ -106,8 +106,8 @@ import           Data.Data (Data, Typeable)
 import           Data.Digest.Pure.SHA
 import           Data.Foldable
 import           Data.Function (on)
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
 import           Data.SafeCopy
@@ -160,9 +160,9 @@ data RenderedItem = RenderedItem { _renderedFeed :: Text
                                  } deriving (Eq,Show)
 makeLenses ''RenderedItem
 
-data Database = Database { _unreadFeeds :: Map Channel (Seq FeedItem)
-                         , _readFeeds :: Map Channel (Seq FeedItem)
-                         , _seenItems :: Map Channel (Set ItemId)
+data Database = Database { _unreadFeeds :: !(Map Channel (Seq FeedItem))
+                         , _readFeeds :: !(Map Channel (Seq FeedItem))
+                         , _seenItems :: !(Map Channel (Set ItemId))
                          } deriving (Show,Eq,Data,Typeable)
 $(deriveSafeCopy 3 'base ''Database)
 makeLenses ''Database
