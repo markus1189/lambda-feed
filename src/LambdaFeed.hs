@@ -28,10 +28,12 @@ import qualified Data.Text.IO as TIO
 import           Data.Text.Lens (_Text)
 import           Data.Time (UTCTime, utcToLocalTime, formatTime, getCurrentTimeZone, getCurrentTime)
 import           System.Directory (doesFileExist)
-#if __GLASGOW_HASKELL__ >= 710
+#if MIN_VERSION_time(1,5,0)
 import           Data.Time (defaultTimeLocale, rfc822DateFormat)
 #else
 import           System.Locale (defaultTimeLocale, rfc822DateFormat)
+#endif
+#if __GLASGOW_HASKELL__ < 710
 import           Data.Traversable (traverse)
 #endif
 import           Formatting (sformat, left, (%), (%.), stext, int)
@@ -265,7 +267,8 @@ executeExternal item = do
   logCmd <- getLogCommand
   statusLogCmd <- getStatusLogCommand
   (command,args) <- view lfExternalCommand
-  let maybeUrlTitle = (,) <$> (view itemCommentUrl item <|> view itemUrl item) <*> view itemTitle item
+  let maybeUrlTitle =
+        (,) <$> (view itemCommentUrl item <|> view itemUrl item) <*> view itemTitle item
   for_ maybeUrlTitle $ \(url,title) -> do
     logIt' $ T.pack command <> " "
           <> T.intercalate " " (fmap T.pack args)
