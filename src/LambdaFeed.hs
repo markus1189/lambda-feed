@@ -39,7 +39,6 @@ import           System.Exit (exitSuccess, ExitCode(..))
 import           System.Process (runInteractiveProcess, waitForProcess)
 import           Text.Pandoc (def)
 import qualified Text.Pandoc as Pandoc
-import qualified Text.Pandoc.Error as Pandoc
 
 #if MIN_VERSION_time(1,5,0)
 import           Data.Time (defaultTimeLocale, rfc822DateFormat)
@@ -108,9 +107,7 @@ showContentFor item = do
 renderItemContent :: FeedItem -> RenderedItem
 renderItemContent i =
   RenderedItem feedTitle' itemTitle' itemLink' itemComments' pubDate' pandocResult guid
-  where pandocRender :: String -> String
-        pandocRender = Pandoc.writeMarkdown def . Pandoc.handleError . Pandoc.readHtml def
-        content = view (itemContent . non "Cannot render content") i
+  where content = view (itemContent . non "Cannot render content") i
         pandocResult = content & _Text %~ pandocRender
         feedTitle' = sanitizedTitle $ view itemChannel i
         itemTitle' = view (itemTitle . non "<No title>") i
@@ -121,6 +118,11 @@ renderItemContent i =
         formatPubDate :: UTCTime -> Text
         formatPubDate = T.pack . formatTime defaultTimeLocale rfc822DateFormat
         stripSlash = T.dropWhileEnd (=='/')
+
+pandocRender :: String -> String
+pandocRender = either (const "<Could not render this content>")
+                      (Pandoc.writeMarkdown def)
+             . Pandoc.readHtml def
 
 sanitizedTitle :: Channel -> Text
 sanitizedTitle chan = head $ T.lines $ T.strip $ if T.null ctitle
