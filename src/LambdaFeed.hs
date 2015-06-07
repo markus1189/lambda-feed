@@ -5,6 +5,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 module LambdaFeed (lambdaFeed) where
 
+#if MIN_VERSION_time(1,5,0)
+import           Data.Time (defaultTimeLocale, rfc822DateFormat)
+#else
+import           System.Locale (defaultTimeLocale, rfc822DateFormat)
+#endif
+#if __GLASGOW_HASKELL__ < 710
+import           Data.Traversable (traverse)
+#endif
+
 import           Control.Applicative
 import           Control.Concurrent (forkIO,threadDelay)
 import           Control.Concurrent.Async (async)
@@ -32,6 +41,9 @@ import           Formatting.Time (monthNameShort, dayOfMonth, hms)
 import           Graphics.Vty (Attr)
 import           Graphics.Vty.Widgets.All (Widget, List, FormattedText, clearList, plainText, addToList, setText, appendText, setEditText, getEditText)
 import           Graphics.Vty.Widgets.EventLoop (schedule, shutdownUi)
+import           LambdaFeed.Actor
+import           LambdaFeed.Types
+import           LambdaFeed.Widgets
 import           Pipes
 import           Pipes.Concurrent (fromInput, atomically, Input, send)
 import           System.Directory (doesFileExist)
@@ -39,20 +51,6 @@ import           System.Exit (exitSuccess, ExitCode(..))
 import           System.Process (runInteractiveProcess, waitForProcess)
 import           Text.Pandoc (def)
 import qualified Text.Pandoc as Pandoc
-
-#if MIN_VERSION_time(1,5,0)
-import           Data.Time (defaultTimeLocale, rfc822DateFormat)
-#else
-import           System.Locale (defaultTimeLocale, rfc822DateFormat)
-#endif
-#if __GLASGOW_HASKELL__ < 710
-import           Data.Traversable (traverse)
-#endif
-
-
-import           LambdaFeed.Actor
-import           LambdaFeed.Types
-import           LambdaFeed.Widgets
 
 queryAcid :: (QueryEvent e, MethodState e ~ Database) => e -> LF (MethodResult e)
 queryAcid x = do
