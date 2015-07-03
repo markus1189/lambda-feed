@@ -210,7 +210,7 @@ data GuiEvent = ChannelActivated Channel
               | ToggleChannelVisibility
               | ToggleItemVisibility
               | FetchAll
-              | ExternalCommandOnItem FeedItem
+              | ExternalCommandOnItem Bool FeedItem
               | SwitchToLogging
               | EditUrls
               | AcceptUrlEditing

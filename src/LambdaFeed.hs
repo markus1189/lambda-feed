@@ -224,7 +224,7 @@ handleGUIEvent seal = handle
                              ReadAndUnread -> OnlyUnread
                              i -> i
            for_ currentChannel $ \curr -> showItemsFor curr
-        handle (ExternalCommandOnItem item) = executeExternal item
+        handle (ExternalCommandOnItem b item) = executeExternal b item
         handle SwitchToLogging = switchUsing switchToLogging
         handle EditUrls = do
           prepareEditUrls
@@ -262,13 +262,15 @@ markCurrentChannelRead = do
   currentChannel <- use lfCurrentChannel
   for_ currentChannel markChannelRead
 
-executeExternal :: FeedItem -> LF ()
-executeExternal item = do
+executeExternal :: Bool -> FeedItem -> LF ()
+executeExternal beSmart item = do
   logCmd <- getLogCommand
   statusLogCmd <- getStatusLogCommand
   (command,args) <- view lfExternalCommand
-  let maybeUrlTitle =
-        (,) <$> (view itemCommentUrl item <|> view itemUrl item) <*> view itemTitle item
+  let maybeUrlTitle = if beSmart
+        then (,) <$> (view itemCommentUrl item <|> view itemUrl item) <*> view itemTitle item
+        else (,) <$> (view itemUrl item) <*> view itemTitle item
+
   for_ maybeUrlTitle $ \(url,title) -> do
     logIt' $ T.pack command <> " "
           <> T.intercalate " " (fmap T.pack args)

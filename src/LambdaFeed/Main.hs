@@ -165,7 +165,10 @@ setupGui trigger  = do
   itemList `onKeyPressed` \_ k ms -> case (k,ms) of
     (KChar 'i',[]) -> do
       maybeSel <- getSelected itemList
-      maybe (return False) (\(_,(item,_)) -> trigger (ExternalCommandOnItem item)) maybeSel
+      maybe (return False) (\(_,(item,_)) -> trigger (ExternalCommandOnItem True item)) maybeSel
+    (KChar 'I',[]) -> do
+      maybeSel <- getSelected itemList
+      maybe (return False) (\(_,(item,_)) -> trigger (ExternalCommandOnItem False item)) maybeSel
     _ -> return False
 
   itemList `onItemActivated` \(ActivateItemEvent _ item _) ->
