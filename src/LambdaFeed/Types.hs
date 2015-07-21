@@ -293,12 +293,12 @@ nonAcidUpdateFeeds feeds = do
   seenItems %= Map.union (feedsWithGuid feeds)
 
 feedsWithGuid :: Foldable f => f FeedItem -> Map Channel (Set ItemId)
-feedsWithGuid feeds = foldl' step Map.empty feeds
+feedsWithGuid = foldl' step Map.empty
   where step :: Map Channel (Set ItemId) -> FeedItem -> Map Channel (Set ItemId)
         step acc item =
           Map.insertWith Set.union
                          (item ^. itemChannel)
-                         (fromMaybe Set.empty (Set.singleton <$> (guidOrSHA item)))
+                         (fromMaybe Set.empty (Set.singleton <$> guidOrSHA item))
                          acc
 
 collectNewItems :: (Functor f, Foldable f)
