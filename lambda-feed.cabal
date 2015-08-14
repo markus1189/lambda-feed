@@ -38,7 +38,7 @@ library
                      , lens >= 4.7 && < 4.9
                      , mtl >= 2.2 && < 2.3
                      , old-locale
-                     , pandoc >= 1.14 && < 1.15
+                     , pandoc >= 1.14 && < 1.16
                      , pipes >= 4.1 && < 4.2
                      , pipes-concurrency >= 2.0 && < 2.1
                      , process >= 1.2 && < 1.3
