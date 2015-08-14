@@ -19,9 +19,10 @@ module LambdaFeed.Types (Channel(Channel)
                         ,itemPubDate
                         ,itemId
 
-                        ,ItemId(IdFromFeed, IdFromContentSHA)
+                        ,ItemId(IdFromFeed, IdFromContentSHA,IdFromLink)
                         ,_IdFromFeed
                         ,_IdFromContentSHA
+                        ,_IdFromLink
 
                         ,RenderedItem(RenderedItem)
                         ,renderedFeed
@@ -134,7 +135,7 @@ data Channel = Channel { _channelTitle :: Text
 makeLenses ''Channel
 $(deriveSafeCopy 1 'base ''Channel)
 
-data ItemId = IdFromFeed String | IdFromContentSHA String
+data ItemId = IdFromFeed String | IdFromContentSHA String | IdFromLink String
   deriving (Show,Eq,Ord,Data,Typeable)
 $(deriveSafeCopy 0 'base ''ItemId)
 makePrisms ''ItemId

@@ -2,7 +2,7 @@
 module LambdaFeed.Conversion (convertFeedToFeedItems) where
 
 import           Control.Applicative ((<|>))
-import           Control.Lens (lazy, view, below, review)
+import           Control.Lens (lazy, view, below, review,(#))
 import           Control.Monad (join)
 import           Data.Digest.Pure.SHA (sha1, showDigest)
 #if __GLASGOW_HASKELL__ >= 710
@@ -33,7 +33,9 @@ convertFeedItem src now srcFeed i = FeedItem title url curl content pubDateOrNow
         url = T.pack <$> getItemLink i
         curl = T.pack <$> getItemCommentLink i
         content = getFeedContent i
-        guid = (review _IdFromFeed . snd) <$> getItemId i <|> sha
+        guid = ((review _IdFromFeed . snd) <$> getItemId i)
+           <|> (_IdFromLink #) <$> getItemLink i
+           <|> sha
         chan = Channel (T.pack (getFeedTitle srcFeed)) (T.pack <$> getFeedHome srcFeed) src
         pubDateOrNow = fromJust $ join (getItemPublishDate i) <|> Just now
         sha = review (below _IdFromContentSHA) $
