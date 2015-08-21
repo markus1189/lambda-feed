@@ -96,6 +96,7 @@ module LambdaFeed.Types (Channel(Channel)
 
 import           Control.Applicative
 import           Control.Concurrent.Async (Async)
+import           Control.Exception.Base (SomeException)
 import           Control.Lens (view, use, lazy, at, non, review)
 import           Control.Lens.Operators
 import           Control.Lens.TH
@@ -127,6 +128,7 @@ import           LambdaFeed.Actor
 data RetrievalError = RetrievalHttpError Text HttpException
                     | TimeOutDuringRetrieve Text Int
                     | FeedParseError Text
+                    | UncaughtException Text SomeException
                     deriving (Show)
 data Channel = Channel { _channelTitle :: Text
                        , _channelUrl :: Maybe Text

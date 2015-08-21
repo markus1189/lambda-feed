@@ -1,7 +1,7 @@
 {-# LANGUAGE TupleSections #-}
 module LambdaFeed.Retrieval (fetchActor, fetch1) where
 
-import           Control.Exception.Base (try)
+import           Control.Exception.Base (try,catch)
 import           Control.Lens (view, strict)
 import           Control.Monad (forever)
 import           Data.Sequence (Seq)
@@ -46,7 +46,7 @@ fetchActor dt = newActor (newest 1) unbounded $ forever $ do
       for (each (zip [1..] us)) $ \(i,u) -> (do
         startTime <- liftIO getCurrentTime
         yield (StartedSingleFetch startTime u (i,total))
-        r <- liftIO $ fetch1 dt u
+        r <- liftIO $ fetch1 dt u `catch` (return . Left . UncaughtException u)
         case r of
           Left e -> yield (ErrorDuringFetch u e)
           Right items -> do
