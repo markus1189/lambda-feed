@@ -108,10 +108,12 @@ import           Data.Data (Data, Typeable)
 import           Data.Digest.Pure.SHA
 import           Data.Foldable
 import           Data.Function (on)
+import           Data.List (nubBy)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
+import           Data.Ord (comparing)
 import           Data.SafeCopy
 import           Data.Sequence (Seq, (><))
 import qualified Data.Sequence as Seq
@@ -308,7 +310,7 @@ collectNewItems :: (Functor f, Foldable f)
                  => Map Channel (Set ItemId)
                  -> f FeedItem
                  -> Map Channel (Seq FeedItem)
-collectNewItems seen = foldl' step Map.empty
+collectNewItems seen itms = foldl' step Map.empty (nubBy ((==) `on` view itemId) (toList itms))
   where isOld item =
           flip (maybe True) (guidOrSHA item) $ \guid ->
             Set.member guid (Map.findWithDefault Set.empty (item ^. itemChannel) seen)
