@@ -287,11 +287,15 @@ executeExternal beSmart item = do
       case res of
         Left e -> do
           statusLogCmd "External command failed (see log)"
-          logCmd "Command failed" (T.pack . show $ e)
+          logCmd ("Command failed: " <> url) (T.pack . show $ e)
         Right ExitSuccess -> return ()
         Right (ExitFailure exitCode) -> do
           statusLogCmd "External command failed (see log)"
-          logCmd "Command failed with exit code: " (T.pack . show $ exitCode)
+          logCmd ("Command failed: " <> url)
+                 (T.intercalate "\n" ["URL: " <> url
+                                     ,"TITLE: " <> title
+                                     ,"ExitCode: " <> T.pack (show exitCode)
+                                     ])
 
 updateChannelWidget :: LF ()
 updateChannelWidget = do
