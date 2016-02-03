@@ -50,6 +50,7 @@ library
                      , vty == 5.2.9
                      , vty-ui == 1.9
                      , wreq >= 0.4 && < 0.5
+                     , xml
   default-language:    Haskell2010
 
 executable lambda-feed

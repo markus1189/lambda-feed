@@ -17,7 +17,7 @@ import           System.Timeout (timeout)
 import           Text.Feed.Import (parseFeedString)
 
 import           LambdaFeed.Actor
-import           LambdaFeed.Conversion (convertFeedToFeedItems)
+import           LambdaFeed.Conversion (convertFeedToFeedItems, feedItems')
 import           LambdaFeed.Types
 
 tryHttp :: IO a -> IO (Either HttpException a)
