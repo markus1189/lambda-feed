@@ -113,7 +113,6 @@ import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
-import           Data.Ord (comparing)
 import           Data.SafeCopy
 import           Data.Sequence (Seq, (><))
 import qualified Data.Sequence as Seq
