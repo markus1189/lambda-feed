@@ -15,68 +15,23 @@ source-repository   head
   type: git
   location: git://github.com/markus1189/lambda-feed.git
 
-library
-  ghc-options:         -Wall
-  hs-source-dirs:      src
-  exposed-modules:     LambdaFeed
-                     , LambdaFeed.Actor
-                     , LambdaFeed.Conversion
-                     , LambdaFeed.Main
-                     , LambdaFeed.Retrieval
-                     , LambdaFeed.Types
-                     , LambdaFeed.Widgets
-  build-depends:       SHA >= 1.6 && < 1.7
-                     , acid-state >= 0.12 && < 0.13
-                     , async >= 2.0 && < 2.1
-                     , base >= 4 && < 5
-                     , containers >= 0.5 && < 0.6
-                     , directory >= 1.2 && < 1.3
-                     , extra >= 1.1 && < 1.2
-                     , feed >= 0.3.11.1 && < 0.4
-                     , formatting >= 6.2 && < 6.3
-                     , http-client >= 0.4 && < 0.6
-                     , lens >= 4.7 && < 4.9
-                     , mtl >= 2.2 && < 2.3
-                     , old-locale
-                     , pandoc >= 1.14 && < 1.16
-                     , pipes >= 4.1 && < 4.2
-                     , pipes-concurrency >= 2.0 && < 2.1
-                     , process >= 1.2 && < 1.3
-                     , safecopy >= 0.8 && < 0.9
-                     , stm >= 2.4 && < 2.5
-                     , text >= 1.2 && < 1.3
-                     , time
-                     , transformers >= 0.4 && < 0.5
-                     , vty == 5.2.9
-                     , vty-ui == 1.9
-                     , wreq >= 0.4 && < 0.5
-                     , xml
-  default-language:    Haskell2010
-
 executable lambda-feed
+  ghc-options:         -Wall -threaded
+  hs-source-dirs:      src
+  other-modules:       LambdaFeed
+  build-depends:       base
+                     , brick
+                     , containers
+                     , directory
+                     , feed
+                     , http-client
+                     , lens
+                     , mtl
+                     , process
+                     , stm
+                     , text
+                     , time
+                     , transformers
+                     , wreq
   main-is:             Main.hs
-  ghc-options:         -threaded -Wall
-  hs-source-dirs:      main
-  build-depends:       base >= 4 && < 5
-                     , lambda-feed
   default-language:    Haskell2010
-
-test-suite test
-  default-language:    Haskell2010
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      tests
-  main-is:             test.hs
-  ghc-options:         -Wall
-  build-depends:       base >= 4 && < 5
-                     , containers >= 0.5 && < 0.6
-                     , lambda-feed
-                     , mtl >= 2.2 && < 2.3
-                     , hspec < 2.2
-                     , tasty
-                     , tasty-hspec
-                     , tasty-hunit
-                     , tasty-quickcheck
-                     , tasty-smallcheck
-                     , text >= 1.2 && < 1.3
-                     , time >= 1.5 && < 1.6
-                     , lens >= 4.7 && < 4.9
