@@ -32,6 +32,8 @@ executable lambda-feed
                      , text
                      , time
                      , transformers
+                     , vector
+                     , vty
                      , wreq
   main-is:             Main.hs
   default-language:    Haskell2010
