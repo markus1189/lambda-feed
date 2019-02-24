@@ -18,8 +18,8 @@ source-repository   head
 executable lambda-feed
   ghc-options:         -Wall -threaded
   hs-source-dirs:      src
-  other-modules:       LambdaFeed
   build-depends:       base
+                     , async
                      , brick
                      , containers
                      , directory
@@ -29,6 +29,7 @@ executable lambda-feed
                      , mtl
                      , process
                      , stm
+                     , streaming
                      , text
                      , time
                      , transformers

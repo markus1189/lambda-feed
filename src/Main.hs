@@ -1,98 +1,72 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE PatternSynonyms #-}
 module Main where
 
-import qualified Brick.AttrMap as A
-import qualified Brick.Focus as F
-import qualified Brick.Main as M
-import           Brick.Types (Widget)
-import qualified Brick.Types as T
-import           Brick.Util (fg, on)
-import qualified Brick.Widgets.Border as B
-import qualified Brick.Widgets.Center as C
-import           Brick.Widgets.Core (vLimitPercent, hLimit, str, vBox, vLimit, withAttr, (<+>))
+import qualified Brick.AttrMap as Brick
+import qualified Brick.BChan as Brick
+import qualified Brick.Main as Brick
+import           Brick.Types
+import           Brick.Util (on)
 import qualified Brick.Widgets.List as L
-import           Control.Lens (view)
+import           Control.Concurrent.Async (async)
 import           Control.Lens.Operators
-import           Control.Lens.TH
-import           Control.Lens.Type
 import           Control.Monad (void)
-import           Data.Maybe (fromMaybe)
-import qualified Data.Vector as Vec
-import           Debug.Trace (traceShow)
-import qualified Graphics.Vty as V
+import qualified Data.Vector as V
+import qualified Graphics.Vty as Vty
+import qualified Text.Feed.Query as FeedQuery
 
-data Names = TopList | BottomList deriving (Ord, Eq, Show)
+import           Events
+import           Feed
+import           View
 
-data UIState = UIState { _uiTopList :: L.List Names Char
-                       , _uiBottomList :: L.List Names Char
-                       , _uiFocusRing :: F.FocusRing Names
-                       }
-makeLenses ''UIState
-
-drawUI :: UIState -> [Widget Names]
-drawUI s@(UIState _ _ fr) = [ui]
-    where
-        label = str "Item " <+> cur <+> str " of " <+> total
-        cur = case s ^. focusedListL fr. L.listSelectedL of
-                Nothing -> str "-"
-                Just i  -> str (show (i + 1))
-        total = str $ show $ Vec.length $ s ^. focusedListL fr . L.listElementsL
-        box list = B.borderWithLabel label $
-                   L.renderList listDrawElement True list
-        ui = C.vCenter $ vBox [ C.hCenter (box (s ^. focusedListL fr))
-                              ]
-
-focusedListL :: F.FocusRing Names -> Lens' UIState (L.List Names Char)
-focusedListL f = case F.focusGetCurrent f of
-  Just TopList -> uiTopList
-  Just BottomList -> uiBottomList
-  Nothing -> undefined
-
-
-appEvent :: UIState -> T.BrickEvent Names e -> T.EventM Names (T.Next UIState)
-appEvent s@(UIState l b f) (T.VtyEvent e) =
+appEvent :: UIState -> BrickEvent WidgetName CustomEvent -> EventM WidgetName (Next UIState)
+appEvent s (AppEvent (DownloadedFeed f)) = Brick.continue $ s & uiFeedList %~ L.listInsert 0 f
+appEvent s@(UIState _ _ f _) (VtyEvent e) =
     case e of
-        V.EvKey (V.KChar 'q') [] -> M.halt s
-        V.EvKey (V.KChar '\t') [] -> M.continue (UIState l b (F.focusNext f))
+      Vty.EvKey (Vty.KChar 'q') [] -> Brick.halt s
+      MoveLeft -> case f of
+        FeedList -> Brick.continue s
+        ItemList -> Brick.continue $ s & uiFocus .~ FeedList & uiItemList %~ L.listClear
+        ItemView -> Brick.continue $ s & uiFocus .~ ItemList
+      MoveRight -> case f of
+        FeedList -> case L.listSelectedElement (s ^. uiFeedList) of
+          Nothing -> Brick.continue s
+          Just (_, feed) -> Brick.continue $ s & uiFocus .~ ItemList & uiItemList %~ L.listReplace (V.fromList (FeedQuery.getFeedItems feed)) (Just 0)
+        ItemList -> case L.listSelectedElement (s ^. uiItemList) of
+          Nothing -> Brick.continue s
+          Just _ -> Brick.continue $ s & uiFocus .~ ItemView
+        ItemView -> Brick.continue $ s & uiFocus .~ ItemList
+      ev -> case f of
+        FeedList -> L.handleListEventVi L.handleListEvent ev (s ^. uiFeedList) >>= \result -> Brick.continue (s & uiFeedList .~ result)
+        ItemList -> L.handleListEventVi L.handleListEvent ev (s ^. uiItemList) >>= \result -> Brick.continue (s & uiItemList .~ result)
+        ItemView -> Brick.continue s
 
-        ev -> L.handleListEventVi L.handleListEvent ev (s ^. focusedListL f) >>= \result -> M.continue (s & focusedListL f .~ result)
-
-appEvent l _ = M.continue l
-
-listDrawElement :: Show a => Bool -> a -> Widget Names
-listDrawElement sel a =
-    let selStr s = if sel
-                   then withAttr customAttr (str $ "<" <> s <> ">")
-                   else str s
-    in C.hCenter $ str "Item " <+> selStr (show a)
+appEvent l _ = Brick.continue l
 
 initialState :: UIState
-initialState =
-  UIState (L.list TopList (Vec.fromList []) 1)
-          (L.list BottomList (Vec.fromList []) 1)
-          (F.focusRing [TopList, BottomList])
+initialState = UIState (L.list FeedList (V.fromList []) 1)
+                       (L.list ItemList (V.fromList []) 1)
+                       FeedList
+                       []
 
-customAttr :: A.AttrName
-customAttr = L.listSelectedAttr <> "custom"
-
-theMap :: A.AttrMap
-theMap = A.attrMap V.defAttr
-    [ (L.listAttr,            V.white `on` V.black)
-    , (L.listSelectedAttr,    V.black `on` V.yellow)
-    , (customAttr,            fg V.cyan)
+theMap :: Brick.AttrMap
+theMap = Brick.attrMap Vty.defAttr
+    [ (L.listAttr, Vty.white `on` Vty.black)
+    , (L.listSelectedAttr, Vty.black `on` Vty.yellow)
+    , (itemViewAttr, Vty.white `on` Vty.black)
     ]
 
-theApp :: M.App UIState e Names
+theApp :: Brick.App UIState CustomEvent WidgetName
 theApp =
-    M.App { M.appDraw = drawUI
-          , M.appChooseCursor = F.focusRingCursor (view uiFocusRing)
-          , M.appHandleEvent = appEvent
-          , M.appStartEvent = return
-          , M.appAttrMap = const theMap
+    Brick.App { Brick.appDraw = drawUI
+          , Brick.appChooseCursor = \s cs -> Brick.showCursorNamed (s ^. uiFocus) cs
+          , Brick.appHandleEvent = appEvent
+          , Brick.appStartEvent = return
+          , Brick.appAttrMap = const theMap
           }
 
 main :: IO ()
-main = void $ M.defaultMain theApp initialState
+main = do
+  eventChan <- Brick.newBChan 10
+  _ <- async (downloadFeeds eventChan)
+  void $ Brick.customMain (Vty.mkVty Vty.defaultConfig) (Just eventChan) theApp initialState
